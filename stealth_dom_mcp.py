@@ -159,7 +159,7 @@ CAPABILITIES SUMMARY (35+ tools):
 - Navigate: navigate, back, reload, getURL, getTitle, getPageText
 - Tabs: listTabs, newTab, closeTab, switchTab
 - Windows: newWindow, newIncognitoWindow, listWindows, closeWindow, resizeWindow
-- Screenshots: screenshot (full page PNG)
+- Screenshots: screenshot (PNG, optional save to disk)
 - Cookies: getCookies
 - JavaScript: evaluate (arbitrary JS in page context, works on ALL sites)
 """)
@@ -226,7 +226,7 @@ def get_capabilities() -> str:
 - `browser_resize_window(window_id, width, height)` — Resize window
 
 ### Screenshots
-- `browser_screenshot(tab_id)` — Capture visible tab as base64 PNG
+- `browser_screenshot(tab_id, save_path=None)` — Capture visible tab as PNG. If save_path is provided, saves to disk and returns the file path; otherwise returns base64 data URL.
 
 ### Cookies
 - `browser_get_cookies(url)` — Get all cookies for a URL
