@@ -13,8 +13,9 @@ The agent explored YouTube's DOM, discovered the elements used for Shorts across
 The agent navigated to YouTube and queried the page to find Shorts elements:
 
 ```
-browser_navigate("https://www.youtube.com")
-browser_query_all("ytd-rich-shelf-renderer", limit=5)
+browser_list_tabs()                                     # Discover tab IDs
+browser_navigate(tab_id, "https://www.youtube.com")
+browser_query_all(tab_id, "ytd-rich-shelf-renderer", limit=5)
 ```
 
 This revealed that homepage Shorts appear as `ytd-rich-shelf-renderer` elements with "Shorts" as their title text.
@@ -24,8 +25,8 @@ This revealed that homepage Shorts appear as `ytd-rich-shelf-renderer` elements 
 The agent then navigated to search results and discovered a different element type:
 
 ```
-browser_navigate("https://www.youtube.com/results?search_query=...")
-browser_query_all("ytd-item-section-renderer #contents > *", limit=5)
+browser_navigate(tab_id, "https://www.youtube.com/results?search_query=...")
+browser_query_all(tab_id, "ytd-item-section-renderer #contents > *", limit=5)
 ```
 
 Search results use `grid-shelf-view-model` — a newer YouTube element that wasn't caught by the initial approach. The agent updated the script to target both.

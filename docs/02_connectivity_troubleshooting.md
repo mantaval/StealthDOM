@@ -21,7 +21,7 @@ bridge_server.py (port 9877)  ←──WebSocket──→  Background Service Wo
 2. Background service worker connects to `ws://127.0.0.1:9877`
 3. On connect, sends handshake with extension details
 4. Bridge heartbeats sent every 5 seconds to keep the connection alive
-5. DOM commands are forwarded to the active tab's content script via `chrome.tabs.sendMessage`
+5. DOM commands are forwarded to the specified tab's content script via `chrome.tabs.sendMessage(tabId, ...)`
 
 ## Troubleshooting
 

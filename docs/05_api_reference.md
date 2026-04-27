@@ -30,7 +30,7 @@ Query a single DOM element by CSS selector. Returns element details (tag, id, cl
 ```json
 { "action": "querySelector", "selector": "#prompt-textarea" }
 ```
-**MCP Tool:** `browser_query(selector)`  
+**MCP Tool:** `browser_query(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -47,7 +47,7 @@ Query all matching DOM elements. Returns count and element details array.
 { "action": "querySelectorAll", "selector": ".message" }
 { "action": "querySelectorAll", "selector": "div", "limit": 20 }
 ```
-**MCP Tool:** `browser_query_all(selector, limit=0)`  
+**MCP Tool:** `browser_query_all(tab_id, selector, limit=0)`  
 **Handled by:** Content Script
 
 ---
@@ -62,7 +62,7 @@ Get the inner text content of a DOM element.
 ```json
 { "action": "getInnerText", "selector": "#content" }
 ```
-**MCP Tool:** `browser_get_text(selector)`  
+**MCP Tool:** `browser_get_text(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -79,7 +79,7 @@ Get the outer HTML of a DOM element.
 { "action": "getOuterHTML", "selector": "#form" }
 { "action": "getOuterHTML", "selector": "body", "maxLength": 5000 }
 ```
-**MCP Tool:** `browser_get_html(selector, max_length=0)`  
+**MCP Tool:** `browser_get_html(tab_id, selector, max_length=0)`  
 **Handled by:** Content Script
 
 ---
@@ -95,7 +95,7 @@ Get an HTML attribute value from a DOM element.
 ```json
 { "action": "getAttribute", "selector": "#link", "attribute": "href" }
 ```
-**MCP Tool:** `browser_get_attribute(selector, attribute)`  
+**MCP Tool:** `browser_get_attribute(tab_id, selector, attribute)`  
 **Handled by:** Content Script
 
 ---
@@ -159,7 +159,7 @@ Wait for a DOM element to appear. Polls every 200ms.
 ```json
 { "action": "waitForSelector", "selector": ".loaded", "timeout": 10000 }
 ```
-**MCP Tool:** `browser_wait_for(selector, timeout=10000)`  
+**MCP Tool:** `browser_wait_for(tab_id, selector, timeout=10000)`  
 **Handled by:** Content Script
 
 ---
@@ -191,7 +191,7 @@ Get the full visible text content of the current page.
 ```json
 { "action": "getPageText" }
 ```
-**MCP Tool:** `browser_get_page_text()`  
+**MCP Tool:** `browser_get_page_text(tab_id)`  
 **Handled by:** Content Script
 
 ---
@@ -224,7 +224,7 @@ Click a DOM element. Element is scrolled into view first.
 ```json
 { "action": "click", "selector": "button.submit" }
 ```
-**MCP Tool:** `browser_click(selector)`  
+**MCP Tool:** `browser_click(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -255,7 +255,7 @@ Type text into a DOM element (appends to existing content). Works with contented
 ```json
 { "action": "type", "selector": "#input", "text": "hello world" }
 ```
-**MCP Tool:** `browser_type(selector, text)`  
+**MCP Tool:** `browser_type(tab_id, selector, text)`  
 **Handled by:** Content Script
 
 ---
@@ -271,7 +271,7 @@ Clear and fill a form input or contenteditable element with new text.
 ```json
 { "action": "fill", "selector": "#input", "value": "hello world" }
 ```
-**MCP Tool:** `browser_fill(selector, value)`  
+**MCP Tool:** `browser_fill(tab_id, selector, value)`  
 **Handled by:** Content Script
 
 ---
@@ -316,7 +316,7 @@ Check a checkbox (no-op if already checked).
 ```json
 { "action": "check", "selector": "#checkbox" }
 ```
-**MCP Tool:** `browser_check(selector)`  
+**MCP Tool:** `browser_check(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -347,7 +347,7 @@ Select an option in a dropdown/select element.
 ```json
 { "action": "selectOption", "selector": "#dropdown", "value": "option1" }
 ```
-**MCP Tool:** `browser_select(selector, value)`  
+**MCP Tool:** `browser_select(tab_id, selector, value)`  
 **Handled by:** Content Script
 
 ---
@@ -362,7 +362,7 @@ Scroll an element smoothly into view (centered in viewport).
 ```json
 { "action": "scrollIntoView", "selector": ".target" }
 ```
-**MCP Tool:** `browser_scroll_to(selector)`  
+**MCP Tool:** `browser_scroll_to(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -395,7 +395,7 @@ Press a single keyboard key (dispatches keydown + keyup).
 ```json
 { "action": "keyPress", "key": "Enter" }
 ```
-**MCP Tool:** `browser_press(key)`  
+**MCP Tool:** `browser_press(tab_id, key)`  
 **Handled by:** Content Script
 
 ---
@@ -410,7 +410,7 @@ Press a keyboard shortcut (key combination).
 ```json
 { "action": "keyCombo", "keys": ["Control", "Shift", "d"] }
 ```
-**MCP Tool:** `browser_key_combo(keys)` — pass as comma-separated string: `"Control,Shift,d"`  
+**MCP Tool:** `browser_key_combo(tab_id, keys)` — pass keys as comma-separated string: `"Control,Shift,d"`  
 **Handled by:** Content Script
 
 ---
@@ -474,7 +474,7 @@ Get the current page URL.
 ```json
 { "action": "getURL" }
 ```
-**MCP Tool:** `browser_get_url()`  
+**MCP Tool:** `browser_get_url(tab_id)`  
 **Handled by:** Content Script
 
 ---
@@ -485,7 +485,7 @@ Get the current page title.
 ```json
 { "action": "getTitle" }
 ```
-**MCP Tool:** `browser_get_title()`  
+**MCP Tool:** `browser_get_title(tab_id)`  
 **Handled by:** Content Script
 
 ---
@@ -504,7 +504,7 @@ Get page status (URL and title).
 ## Navigation
 
 ### navigate
-Navigate the active tab to a URL.
+Navigate a tab to a URL.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -513,7 +513,7 @@ Navigate the active tab to a URL.
 ```json
 { "action": "navigate", "url": "https://example.com" }
 ```
-**MCP Tool:** `browser_navigate(url)`  
+**MCP Tool:** `browser_navigate(tab_id, url)`  
 **Handled by:** Background
 
 ---
@@ -524,7 +524,7 @@ Go back in browser history.
 ```json
 { "action": "goBack" }
 ```
-**MCP Tool:** `browser_back()`  
+**MCP Tool:** `browser_back(tab_id)`  
 **Handled by:** Background
 
 ---
@@ -541,16 +541,16 @@ Go forward in browser history.
 ---
 
 ### reloadTab
-Reload the current (or specified) tab.
+Reload a tab.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tabId` | integer | — | active tab | ID of tab to reload |
+| `tabId` | integer | ✅ | — | ID of tab to reload |
 
 ```json
-{ "action": "reloadTab" }
+{ "action": "reloadTab", "tabId": 123 }
 ```
-**MCP Tool:** `browser_reload()`  
+**MCP Tool:** `browser_reload(tab_id)`  
 **Handled by:** Background
 
 ---
@@ -558,7 +558,7 @@ Reload the current (or specified) tab.
 ## Tab Management
 
 ### listTabs
-List all open browser tabs with their IDs, URLs, titles, and active status.
+List all open browser tabs with their IDs, URLs, titles, active status, windowId, and incognito status.
 
 ```json
 { "action": "listTabs" }
@@ -693,13 +693,17 @@ Resize a browser window.
 ## Screenshots
 
 ### captureScreenshot
-Capture a screenshot of the current visible tab as PNG.
+Capture a screenshot of a specific tab as PNG. The tab is activated and its window focused before capture.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tabId` | integer | ✅ | — | ID of the tab to screenshot |
 
 ```json
-{ "action": "captureScreenshot" }
-→ { "data": { "dataUrl": "data:image/png;base64,..." } }
+{ "action": "captureScreenshot", "tabId": 123 }
+→ { "data": { "dataUrl": "data:image/png;base64,...", "tabId": 123 } }
 ```
-**MCP Tool:** `browser_screenshot(save_path=None)`  
+**MCP Tool:** `browser_screenshot(tab_id, save_path=None)`  
 When `save_path` is provided, the MCP tool saves the PNG to disk and returns the file path.  
 **Handled by:** Background
 
@@ -769,7 +773,7 @@ Supports both expressions and return statements:
 { "action": "evaluate", "code": "return document.querySelectorAll('a').length" }
 { "action": "evaluate", "code": "return [...document.querySelectorAll('a')].map(a => a.href)" }
 ```
-**MCP Tool:** `browser_evaluate(code)`  
+**MCP Tool:** `browser_evaluate(tab_id, code)`  
 **Handled by:** Background (via `chrome.scripting.executeScript`)
 
 ---
@@ -905,13 +909,19 @@ Test that the content script is responsive.
 
 ## Global Parameters
 
-Every WebSocket command supports these optional parameters:
+Every WebSocket command supports these parameters:
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `_timeout` | integer | 30 | Timeout in seconds for the command |
-| `tabId` | integer | active tab | Target a specific tab instead of the active one |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `_timeout` | integer | — | 30 | Timeout in seconds for the command |
+| `_msg_id` | string | — | — | Correlation ID echoed back in the response (for parallel request matching) |
+| `tabId` | integer | **✅ Required** | — | Target tab ID. **Required for all tab-scoped commands.** Use `listTabs` to discover IDs. |
+
+> **Important:** `tabId` is **mandatory** for all tab-scoped commands (DOM, navigation, screenshots, evaluate, etc.).
+> There is no "active tab" fallback — commands without `tabId` will return an error.
+> Only `listTabs`, `listWindows`, `newTab`, `newWindow`, and `newIncognitoWindow` do not require `tabId`.
 
 ```json
 { "action": "click", "selector": "#btn", "_timeout": 10, "tabId": 456 }
 ```
+

@@ -75,6 +75,9 @@ StealthDOM/
 │                                 for AI agent integration. Includes
 │                                 instructions and capabilities resource.
 │
+├── tests/
+│   └── test_stealth_dom.py    ← Integration test suite (19 tests)
+│
 └── docs/                      ← This documentation
 ```
 
@@ -85,13 +88,13 @@ StealthDOM/
 2. Background service worker connects to ws://127.0.0.1:9877
 3. Service worker sends heartbeats every 5 seconds to stay alive
 4. Client (Python/MCP) connects to ws://127.0.0.1:9878
-5. Client sends command:  { "action": "click", "selector": "#btn" }
-6. Bridge relays to background service worker
+5. Client sends command:  { "action": "click", "selector": "#btn", "tabId": 123, "_msg_id": "abc" }
+6. Bridge relays to background service worker (echoes _msg_id in response)
 7. Background routes command:
    - Tab/window/screenshot/cookie/JS commands → handled directly
-   - DOM commands → forwarded to content script via chrome.tabs.sendMessage
+   - DOM commands → forwarded to content script via chrome.tabs.sendMessage(tabId)
 8. Content script executes: document.querySelector('#btn').click()
-9. Result sent back: { "success": true, "data": null }
+9. Result sent back: { "success": true, "data": null, "_msg_id": "abc" }
 ```
 
 ### Extension Internals
@@ -100,7 +103,8 @@ StealthDOM/
 - **Owns the WebSocket bridge connection** — connects to bridge_server.py on port 9877
 - Routes all incoming commands to the appropriate handler
 - Handles privileged operations directly: tabs, windows, screenshots, cookies
-- Forwards DOM commands to the active tab's content script via `chrome.tabs.sendMessage`
+- Forwards DOM commands to the specified tab's content script via `chrome.tabs.sendMessage(tabId, ...)`
+- **All tab-scoped commands require an explicit `tabId`** — there is no "active tab" fallback
 - Keeps alive via 20-second keepalive interval (`chrome.runtime.getPlatformInfo`)
 - Auto-reconnects to bridge on disconnect (3-second interval)
 - Network capture via `chrome.webRequest.onBeforeRequest` listener
@@ -258,9 +262,9 @@ and close the browser, it stays disabled the next time you open it.
 
 ### Navigation
 ```json
-{ "action": "navigate", "url": "https://example.com" }
-{ "action": "goBack" }
-{ "action": "goForward" }
+{ "action": "navigate", "url": "https://example.com", "tabId": 123 }
+{ "action": "goBack", "tabId": 123 }
+{ "action": "goForward", "tabId": 123 }
 ```
 
 ### Tab Management
@@ -269,7 +273,7 @@ and close the browser, it stays disabled the next time you open it.
 { "action": "newTab", "url": "https://example.com" }
 { "action": "switchTab", "tabId": 123 }
 { "action": "closeTab", "tabId": 123 }
-{ "action": "reloadTab" }
+{ "action": "reloadTab", "tabId": 123 }
 ```
 
 ### Window Management
@@ -293,8 +297,8 @@ and close the browser, it stays disabled the next time you open it.
 
 ### Screenshots
 ```json
-{ "action": "captureScreenshot" }
-→ { "success": true, "data": { "dataUrl": "data:image/png;base64,..." } }
+{ "action": "captureScreenshot", "tabId": 123 }
+→ { "success": true, "data": { "dataUrl": "data:image/png;base64,...", "tabId": 123 } }
 ```
 
 > The MCP tool wrapping this command (`browser_screenshot`) accepts an optional  
@@ -390,9 +394,16 @@ import asyncio, json, websockets
 
 async def test():
     ws = await websockets.connect('ws://127.0.0.1:9878')
+    
+    # Always list tabs first to get IDs
     await ws.send(json.dumps({'action': 'listTabs', '_timeout': 5}))
     result = json.loads(await ws.recv())
-    print(result)  # {'success': True, 'data': [{'id': ..., 'url': '...', ...}]}
+    tab_id = result['data'][0]['id']
+    print(f"Tab {tab_id}: {result['data'][0]['title']}")
+    
+    # Use explicit tabId for all commands
+    await ws.send(json.dumps({'action': 'getTitle', 'tabId': tab_id, '_timeout': 5}))
+    print(json.loads(await ws.recv()))
     await ws.close()
 
 asyncio.run(test())

@@ -71,6 +71,7 @@ StealthDOM has been tested against major bot detection suites:
 - **Network capture**: Record HTTP requests and responses
 - **Proxy Fetch**: Route HTTP requests through the browser's real TLS fingerprint
 - **MCP integration**: Full MCP server with 35+ tools, instructions, and capabilities resource
+- **Explicit targeting**: All commands target tabs by ID — safe for multi-window, multi-agent use
 - **Enable/Disable toggle**: Click the extension icon to globally enable/disable (restores site security when not in use)
 
 ## Quick Start
@@ -102,12 +103,24 @@ StealthDOM has been tested against major bot detection suites:
 
 5. **Or connect directly** (Python):
    ```python
-   import asyncio, json, websockets
+   import asyncio, json, uuid, websockets
 
    async def main():
        ws = await websockets.connect("ws://127.0.0.1:9878")
-       await ws.send(json.dumps({"action": "listTabs", "_timeout": 5}))
+       
+       # List tabs to get tab IDs
+       msg_id = str(uuid.uuid4())[:8]
+       await ws.send(json.dumps({"action": "listTabs", "_msg_id": msg_id, "_timeout": 5}))
+       result = json.loads(await ws.recv())
+       tabs = result["data"]
+       tab_id = tabs[0]["id"]
+       print(f"Using tab {tab_id}: {tabs[0]['title']}")
+       
+       # Get the page title using explicit tab ID
+       msg_id = str(uuid.uuid4())[:8]
+       await ws.send(json.dumps({"action": "getTitle", "tabId": tab_id, "_msg_id": msg_id, "_timeout": 5}))
        print(json.loads(await ws.recv()))
+       
        await ws.close()
 
    asyncio.run(main())

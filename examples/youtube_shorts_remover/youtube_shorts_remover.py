@@ -23,6 +23,7 @@ Usage:
 import asyncio
 import json
 import sys
+import uuid
 import websockets
 
 # Fix Windows terminal encoding
@@ -35,9 +36,13 @@ POLL_INTERVAL = 3  # seconds between scans
 
 async def send(ws, action, **kwargs):
     """Send a command to StealthDOM and return the result."""
-    msg = {"action": action, "_timeout": 10, **kwargs}
+    msg_id = str(uuid.uuid4())[:8]
+    msg = {"action": action, "_timeout": 10, "_msg_id": msg_id, **kwargs}
     await ws.send(json.dumps(msg))
-    return json.loads(await ws.recv())
+    while True:
+        response = json.loads(await ws.recv())
+        if response.pop("_msg_id", None) == msg_id:
+            return response
 
 
 def log(msg):
@@ -45,7 +50,7 @@ def log(msg):
     print(msg, flush=True)
 
 
-async def remove_shorts(ws):
+async def remove_shorts(ws, tab_id):
     """Remove all Shorts elements from the current YouTube page.
     
     Returns the number of elements removed.
@@ -58,7 +63,8 @@ async def remove_shorts(ws):
         result = await send(
             ws, "removeByText",
             selector=selector,
-            texts=["Shorts"]
+            texts=["Shorts"],
+            tabId=tab_id
         )
         if result.get("success"):
             count = result.get("data", {}).get("removed", 0)
@@ -69,7 +75,8 @@ async def remove_shorts(ws):
         result = await send(
             ws, "removeByText",
             selector=selector,
-            texts=["Shorts"]
+            texts=["Shorts"],
+            tabId=tab_id
         )
         if result.get("success"):
             total += result.get("data", {}).get("removed", 0)
@@ -78,7 +85,8 @@ async def remove_shorts(ws):
     result = await send(
         ws, "removeByText",
         selector="ytd-guide-entry-renderer",
-        texts=["Shorts"]
+        texts=["Shorts"],
+        tabId=tab_id
     )
     if result.get("success"):
         total += result.get("data", {}).get("removed", 0)
@@ -87,7 +95,8 @@ async def remove_shorts(ws):
     result = await send(
         ws, "removeByText",
         selector="ytd-mini-guide-entry-renderer",
-        texts=["Shorts"]
+        texts=["Shorts"],
+        tabId=tab_id
     )
     if result.get("success"):
         total += result.get("data", {}).get("removed", 0)
@@ -98,7 +107,8 @@ async def remove_shorts(ws):
         ws, "removeByChildText",
         parentSelector="ytd-video-renderer",
         childSelector="ytd-thumbnail-overlay-time-status-renderer",
-        texts=["SHORTS"]
+        texts=["SHORTS"],
+        tabId=tab_id
     )
     if result.get("success"):
         total += result.get("data", {}).get("removed", 0)
@@ -108,7 +118,8 @@ async def remove_shorts(ws):
         ws, "removeByChildText",
         parentSelector="ytd-compact-video-renderer",
         childSelector="ytd-thumbnail-overlay-time-status-renderer",
-        texts=["SHORTS"]
+        texts=["SHORTS"],
+        tabId=tab_id
     )
     if result.get("success"):
         total += result.get("data", {}).get("removed", 0)
@@ -118,7 +129,8 @@ async def remove_shorts(ws):
     result = await send(
         ws, "removeByText",
         selector="ytd-video-renderer",
-        texts=["SHORTS"]
+        texts=["SHORTS"],
+        tabId=tab_id
     )
     if result.get("success"):
         total += result.get("data", {}).get("removed", 0)
@@ -127,7 +139,8 @@ async def remove_shorts(ws):
     result = await send(
         ws, "removeByText",
         selector="ytd-compact-video-renderer",
-        texts=["SHORTS"]
+        texts=["SHORTS"],
+        tabId=tab_id
     )
     if result.get("success"):
         total += result.get("data", {}).get("removed", 0)
@@ -173,7 +186,7 @@ async def main():
             await send(ws, "switchTab", tabId=tab_id)
 
             # Remove Shorts elements
-            count = await remove_shorts(ws)
+            count = await remove_shorts(ws, tab_id)
 
             if count > 0:
                 total_removed += count

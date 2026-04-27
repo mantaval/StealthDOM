@@ -116,9 +116,9 @@ Once the bridge is running and you have a browser tab open:
 
    async def test():
        ws = await websockets.connect('ws://127.0.0.1:9878')
-       await ws.send(json.dumps({'action': 'listTabs', '_timeout': 5}))
+       await ws.send(json.dumps({'action': 'listTabs', '_msg_id': 'test1', '_timeout': 5}))
        result = json.loads(await ws.recv())
-       print(result)  # Should show your open tabs
+       print(result)  # {'success': True, 'data': [{'id': ..., 'url': '...', 'incognito': ..., ...}]}
        await ws.close()
 
    asyncio.run(test())
@@ -283,25 +283,39 @@ async def connect():
 
 ## Direct WebSocket Usage (No MCP)
 
-If your application doesn't use MCP, you can connect directly to the bridge's control port:
+If your application doesn't use MCP, you can connect directly to the bridge's control port.
+All tab-scoped commands require an explicit `tabId`. Use `listTabs` first to discover IDs.
 
 ```python
-import asyncio, json, websockets
+import asyncio, json, uuid, websockets
+
+async def send(ws, action, **kwargs):
+    """Send a command with _msg_id for response matching."""
+    msg_id = str(uuid.uuid4())[:8]
+    msg = {"action": action, "_msg_id": msg_id, "_timeout": 10, **kwargs}
+    await ws.send(json.dumps(msg))
+    while True:
+        data = json.loads(await ws.recv())
+        if data.get("_msg_id") == msg_id:
+            data.pop("_msg_id", None)
+            return data
 
 async def main():
     ws = await websockets.connect("ws://127.0.0.1:9878")
     
-    # Navigate to a page
-    await ws.send(json.dumps({"action": "navigate", "url": "https://example.com", "_timeout": 10}))
-    print(json.loads(await ws.recv()))
+    # Discover tabs
+    result = await send(ws, "listTabs")
+    tab_id = result["data"][0]["id"]
+    print(f"Using tab {tab_id}")
+    
+    # Navigate
+    await send(ws, "navigate", url="https://example.com", tabId=tab_id)
     
     # Click a button
-    await ws.send(json.dumps({"action": "click", "selector": "#my-button", "_timeout": 5}))
-    print(json.loads(await ws.recv()))
+    await send(ws, "click", selector="#my-button", tabId=tab_id)
     
     # Take a screenshot
-    await ws.send(json.dumps({"action": "captureScreenshot", "_timeout": 5}))
-    result = json.loads(await ws.recv())
+    result = await send(ws, "captureScreenshot", tabId=tab_id)
     # result["data"]["dataUrl"] contains the base64 PNG
     
     await ws.close()
@@ -320,6 +334,7 @@ Commands are JSON objects with an `action` field and optional parameters. See [0
 | `bridge_server.py` | WebSocket relay server (ports 9877 + 9878) |
 | `stealth_dom_mcp.py` | MCP server wrapping all commands as AI agent tools |
 | `extension/` | Browser extension (background.js, content_script.js, manifest.json) |
+| `tests/test_stealth_dom.py` | Integration test suite (19 tests) |
 | `start_bridge.bat` | One-click bridge startup with auto-restart (Windows) |
 | `windows_startup_install.bat` | Install bridge as Windows auto-start task (right-click → Run as admin) |
 | `windows_startup_uninstall.bat` | Remove the auto-start task (right-click → Run as admin) |

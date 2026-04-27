@@ -13,8 +13,9 @@ The agent explored Google Voice's DOM, found the message input and send button s
 The agent navigated to Google Voice and identified the key UI elements:
 
 ```
-browser_query_all("textarea, input[type=text], [contenteditable=true]")
-browser_query("button.send-button")
+browser_list_tabs()                                                            # Discover tab IDs
+browser_query_all(tab_id, "textarea, input[type=text], [contenteditable=true]")
+browser_query(tab_id, "button.send-button")
 ```
 
 This revealed:

@@ -13,9 +13,10 @@ That's it. That was the entire instruction given to an AI agent (Antigravity IDE
 The agent used StealthDOM's MCP tools to navigate to Gmail and inspect the page structure:
 
 ```
-browser_navigate("https://mail.google.com/mail/u/0/#inbox")
-browser_wait_for("tr.zA")                    # Wait for email rows to appear
-browser_query_all("tr.zA", limit=10)         # Get inbox rows and inspect their structure
+browser_list_tabs()                              # Discover tab IDs
+browser_navigate(tab_id, "https://mail.google.com/mail/u/0/#inbox")
+browser_wait_for(tab_id, "tr.zA")                # Wait for email rows to appear
+browser_query_all(tab_id, "tr.zA", limit=10)     # Get inbox rows and inspect their structure
 ```
 
 Each email row (`tr.zA`) contains the sender, subject, snippet, and date as inner text. The agent discovered this by reading the DOM — no documentation or prior knowledge of Gmail's internal selectors was needed.
@@ -32,8 +33,8 @@ Row 1: "Citibank Rewards - Your Citibank Rewards Order"  → MATCH
 Gmail uses colon-prefixed IDs like `:2e` which need CSS escaping. The agent clicked the matching row:
 
 ```
-browser_click("tr#\:2e")
-browser_wait_for(".a3s")    # Wait for email body to render
+browser_click(tab_id, "tr#\:2e")
+browser_wait_for(tab_id, ".a3s")    # Wait for email body to render
 ```
 
 ### 4. Extracted the Details

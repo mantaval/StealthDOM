@@ -444,7 +444,10 @@ async function bridgeRouteCommand(msg) {
  */
 async function bridgeForwardToContentScript(msg) {
     try {
-        const targetId = msg.tabId || (await getActiveTabId());
+        const targetId = msg.tabId;
+        if (!targetId) {
+            return { success: false, error: 'tabId required. Use browser_list_tabs to get tab IDs.' };
+        }
         const tab = await chrome.tabs.get(targetId);
 
         // Can't inject into browser internal pages
@@ -474,6 +477,10 @@ if (_enabled) bridgeConnect();
 // ==========================================
 
 async function cmdListTabs() {
+    const windows = await chrome.windows.getAll();
+    const windowIncognito = {};
+    windows.forEach(w => { windowIncognito[w.id] = w.incognito; });
+
     const tabs = await chrome.tabs.query({});
     return {
         success: true,
@@ -483,6 +490,7 @@ async function cmdListTabs() {
             title: t.title,
             active: t.active,
             windowId: t.windowId,
+            incognito: windowIncognito[t.windowId] || false,
             index: t.index,
         }))
     };
@@ -516,8 +524,8 @@ async function cmdSwitchTab(tabId) {
 }
 
 async function cmdReloadTab(tabId) {
-    const targetId = tabId || (await getActiveTabId());
-    await chrome.tabs.reload(targetId);
+    if (!tabId) return { success: false, error: 'tabId required' };
+    await chrome.tabs.reload(tabId);
     return { success: true };
 }
 
@@ -526,23 +534,21 @@ async function cmdReloadTab(tabId) {
 // ==========================================
 
 async function cmdNavigate(url, tabId) {
-    if (!url) {
-        return { success: false, error: 'url required' };
-    }
-    const targetId = tabId || (await getActiveTabId());
-    await chrome.tabs.update(targetId, { url });
+    if (!url) return { success: false, error: 'url required' };
+    if (!tabId) return { success: false, error: 'tabId required' };
+    await chrome.tabs.update(tabId, { url });
     return { success: true };
 }
 
 async function cmdGoBack(tabId) {
-    const targetId = tabId || (await getActiveTabId());
-    await chrome.tabs.goBack(targetId);
+    if (!tabId) return { success: false, error: 'tabId required' };
+    await chrome.tabs.goBack(tabId);
     return { success: true };
 }
 
 async function cmdGoForward(tabId) {
-    const targetId = tabId || (await getActiveTabId());
-    await chrome.tabs.goForward(targetId);
+    if (!tabId) return { success: false, error: 'tabId required' };
+    await chrome.tabs.goForward(tabId);
     return { success: true };
 }
 
@@ -552,9 +558,13 @@ async function cmdGoForward(tabId) {
 
 async function cmdCaptureScreenshot(tabId) {
     try {
-        const targetId = tabId || (await getActiveTabId());
-        // Ensure the tab is active for capture
-        const tab = await chrome.tabs.get(targetId);
+        if (!tabId) return { success: false, error: 'tabId required' };
+        // Activate the target tab and focus its window to ensure captureVisibleTab gets the right content
+        const tab = await chrome.tabs.get(tabId);
+        await chrome.tabs.update(tabId, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+        // Brief delay to let the tab render after activation
+        await new Promise(r => setTimeout(r, 150));
 
         const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
             format: 'png',
@@ -566,7 +576,7 @@ async function cmdCaptureScreenshot(tabId) {
             data: {
                 dataUrl,
                 format: 'png',
-                tabId: targetId,
+                tabId: tabId,
             }
         };
     } catch (e) {
@@ -620,7 +630,8 @@ async function cmdDeleteCookie(url, name) {
 
 async function cmdExecuteScript(code, tabId, world) {
     try {
-        const targetId = tabId || (await getActiveTabId());
+        if (!tabId) return { success: false, error: 'tabId required' };
+        const targetId = tabId;
         // Default to MAIN world for backward compatibility.
         const targetWorld = (world === 'ISOLATED') ? 'ISOLATED' : 'MAIN';
 
@@ -850,10 +861,8 @@ async function cmdResizeWindow(windowId, width, height, left, top) {
 // Helpers
 // ==========================================
 
-async function getActiveTabId() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) throw new Error('No active tab found');
-    return tab.id;
-}
+// getActiveTabId() has been removed.
+// All commands now require an explicit tabId for reliable multi-window targeting.
+// Use browser_list_tabs() to discover tab IDs.
 
 console.log('[StealthDOM] Service worker started (bridge mode)');

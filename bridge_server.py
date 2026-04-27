@@ -205,11 +205,16 @@ class BridgeServer:
     
     async def _handle_control_command(self, data: dict) -> dict:
         """Process a command from a control client by forwarding to extension."""
+        # Extract MCP correlation ID (echoed back for response matching)
+        msg_id = data.pop('_msg_id', None)
         action = data.get('action', '')
         timeout = data.pop('_timeout', 30)
         
         if not action:
-            return {'success': False, 'error': 'Missing action field'}
+            result = {'success': False, 'error': 'Missing action field'}
+            if msg_id:
+                result['_msg_id'] = msg_id
+            return result
         
         if not self.is_connected:
             # Check if any supported Chromium browser is running
@@ -226,23 +231,28 @@ class BridgeServer:
                 browser_running = None  # Unknown
             
             if browser_running is False:
-                return {'success': False, 'error': (
+                result = {'success': False, 'error': (
                     'Extension not connected. No supported browser is running. '
                     'Tell the user to open their Chromium browser (Chrome, Brave, Edge, etc.). '
                     'The StealthDOM extension will auto-connect once the browser is open with any page loaded.'
                 )}
             else:
-                return {'success': False, 'error': (
+                result = {'success': False, 'error': (
                     'Extension not connected. A browser appears to be running but the '
                     'extension has not connected yet. Tell the user to refresh any '
                     'open tab, or check that the StealthDOM extension is '
                     'enabled in the browser\'s extensions page.'
                 )}
+            if msg_id:
+                result['_msg_id'] = msg_id
+            return result
         
         # Forward to extension via send_command
         # Extract action and pass everything else as kwargs
         kwargs = {k: v for k, v in data.items() if k != 'action'}
         result = await self.send_command(action, _timeout=timeout, **kwargs)
+        if msg_id:
+            result['_msg_id'] = msg_id
         return result
     
     # ==========================================
