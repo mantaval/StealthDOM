@@ -56,8 +56,32 @@ function enableCSPStripping() {
         }]
     }).then(() => {
         console.log('[StealthDOM] CSP header stripping enabled');
-    }).catch(err => {
-        console.warn('[StealthDOM] Failed to set CSP stripping rule:', err);
+    });
+}
+
+let _blockConversations = false;
+function enableConversationBlocking() {
+    chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [8888],
+        addRules: [{
+            id: 8888,
+            priority: 2,
+            action: { type: 'block' },
+            condition: {
+                urlFilter: 'backend-anon/conversation',
+                resourceTypes: ['xmlhttprequest']
+            }
+        }]
+    }).then(() => {
+        console.log('[StealthDOM] Conversation blocking enabled');
+    });
+}
+
+function disableConversationBlocking() {
+    chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [8888]
+    }).then(() => {
+        console.log('[StealthDOM] Conversation blocking disabled');
     });
 }
 
@@ -152,7 +176,50 @@ function bridgeDisconnect() {
 // Network Traffic Capture
 // ==========================================
 
-let _netCapture = [];
+// ==========================================
+// Circular Buffer for Network Capture
+// ==========================================
+
+/**
+ * Fixed-size circular buffer. Overwrites oldest entries when full.
+ * Tracks overflow count so agents know if data was lost.
+ */
+class CircularBuffer {
+    constructor(maxSize) {
+        this._buf = new Array(maxSize);
+        this._maxSize = maxSize;
+        this._head = 0;       // Next write position
+        this._size = 0;       // Current fill level
+        this._overflowCount = 0;
+    }
+    push(item) {
+        if (this._size >= this._maxSize) {
+            this._overflowCount++;
+        } else {
+            this._size++;
+        }
+        this._buf[this._head] = item;
+        this._head = (this._head + 1) % this._maxSize;
+    }
+    toArray() {
+        if (this._size < this._maxSize) {
+            return this._buf.slice(0, this._size);
+        }
+        // Buffer is full — items start from _head (oldest) wrapping around
+        return [...this._buf.slice(this._head), ...this._buf.slice(0, this._head)];
+    }
+    clear() {
+        this._head = 0;
+        this._size = 0;
+        this._overflowCount = 0;
+    }
+    get overflowCount() { return this._overflowCount; }
+    get size() { return this._size; }
+    get maxSize() { return this._maxSize; }
+}
+
+const NET_CAPTURE_MAX = 5000;
+const _netCapture = new CircularBuffer(NET_CAPTURE_MAX);
 let _netCaptureActive = false;
 
 // Capture all requests when enabled
@@ -166,15 +233,24 @@ chrome.webRequest.onBeforeRequest.addListener(
             url: details.url,
             tabId: details.tabId,
             requestBody: details.requestBody ? {
-                raw: details.requestBody.raw ? details.requestBody.raw.map(r => ({
-                    bytes: r.bytes ? r.bytes.byteLength : 0,
-                })) : null,
+                raw: details.requestBody.raw ? details.requestBody.raw.map(r => {
+                    if (r.bytes) {
+                        try {
+                            const decoder = new TextDecoder('utf-8');
+                            return { text: decoder.decode(r.bytes) };
+                        } catch (e) {
+                            return { bytes: Array.from(new Uint8Array(r.bytes)) };
+                        }
+                    }
+                    return { file: r.file };
+                }) : null,
                 formData: details.requestBody.formData || null,
             } : null,
         });
     },
     {
-        urls: ['<all_urls>']
+        urls: ['<all_urls>'],
+        types: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'ping', 'other']
     },
     ['requestBody']
 );
@@ -184,7 +260,8 @@ chrome.webRequest.onHeadersReceived.addListener(
     (details) => {
         if (!_netCaptureActive) return;
         // Find matching request and add response info
-        const match = _netCapture.find(r => r.url === details.url && !r.responseHeaders);
+        const arr = _netCapture.toArray();
+        const match = arr.find(r => r.url === details.url && !r.responseHeaders);
         if (match) {
             match.statusCode = details.statusCode;
             match.responseHeaders = {};
@@ -194,7 +271,8 @@ chrome.webRequest.onHeadersReceived.addListener(
         }
     },
     {
-        urls: ['<all_urls>']
+        urls: ['<all_urls>'],
+        types: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'ping', 'other']
     },
     ['responseHeaders']
 );
@@ -203,7 +281,8 @@ chrome.webRequest.onHeadersReceived.addListener(
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
         if (!_netCaptureActive) return;
-        const match = _netCapture.find(r => r.url === details.url && !r.requestHeaders);
+        const arr = _netCapture.toArray();
+        const match = arr.find(r => r.url === details.url && !r.requestHeaders);
         if (match) {
             match.requestHeaders = {};
             for (const h of (details.requestHeaders || [])) {
@@ -212,7 +291,8 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
         }
     },
     {
-        urls: ['<all_urls>']
+        urls: ['<all_urls>'],
+        types: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'ping', 'other']
     },
     ['requestHeaders']
 );
@@ -275,14 +355,18 @@ async function handleBackgroundCommand(msg) {
         // === Screenshots ===
         case 'captureScreenshot':
             return await cmdCaptureScreenshot(msg.tabId);
+        case 'captureFullPageScreenshot':
+            return await cmdCaptureFullPageScreenshot(msg.tabId, msg.maxHeight);
 
         // === Cookies ===
         case 'getCookies':
-            return await cmdGetCookies(msg.url);
+            return await cmdGetCookies(msg.url, msg.tabId, msg.storeId);
         case 'setCookie':
             return await cmdSetCookie(msg.details);
         case 'deleteCookie':
             return await cmdDeleteCookie(msg.url, msg.name);
+        case 'listCookieStores':
+            return await cmdListCookieStores();
 
         // === Script Execution (CSP bypass) ===
         case 'executeScript':
@@ -302,17 +386,35 @@ async function handleBackgroundCommand(msg) {
 
         // === Network Capture ===
         case 'startNetCapture':
-            _netCapture = [];
+            _netCapture.clear();
             _netCaptureActive = true;
             return { success: true, data: 'Capture started' };
         case 'stopNetCapture':
             _netCaptureActive = false;
-            return { success: true, data: { requestCount: _netCapture.length } };
+            return { success: true, data: { requestCount: _netCapture.size } };
         case 'getNetCapture':
-            return { success: true, data: _netCapture };
+            return {
+                success: true,
+                data: {
+                    requests: _netCapture.toArray(),
+                    overflowCount: _netCapture.overflowCount,
+                    bufferSize: _netCapture.maxSize,
+                    capturedCount: _netCapture.size,
+                }
+            };
         case 'clearNetCapture':
-            _netCapture = [];
+            _netCapture.clear();
             return { success: true };
+
+        // === URL Waiting ===
+        case 'waitForUrl':
+            return await cmdWaitForUrl(msg.tabId, msg.pattern, msg.timeout);
+        case 'enableBlock':
+            enableConversationBlocking();
+            return { success: true, data: "Blocking enabled" };
+        case 'disableBlock':
+            disableConversationBlocking();
+            return { success: true, data: "Blocking disabled" };
 
         default:
             return { success: false, error: `Unknown background action: ${action}` };
@@ -353,8 +455,16 @@ function bridgeConnect() {
         console.log('[StealthDOM] Connected to bridge from background script');
         clearTimeout(_bridgeReconnect);
 
+        // Auto-detect browser label for multi-browser support
+        const ua = navigator.userAgent || '';
+        const browserLabel = ua.includes('Brave') ? 'brave'
+            : ua.includes('Edg/') ? 'edge'
+            : ua.includes('Chrome') ? 'chrome'
+            : 'browser';
+
         bridgeSend({
             type: 'handshake',
+            label: browserLabel,
             url: 'extension-background',
             title: 'StealthDOM Service Worker',
             timestamp: Date.now(),
@@ -420,11 +530,12 @@ async function bridgeRouteCommand(msg) {
     const bgActions = [
         'listTabs', 'newTab', 'closeTab', 'switchTab', 'reloadTab',
         'navigate', 'goBack', 'goForward',
-        'captureScreenshot',
-        'getCookies', 'setCookie', 'deleteCookie',
+        'captureScreenshot', 'captureFullPageScreenshot',
+        'getCookies', 'setCookie', 'deleteCookie', 'listCookieStores',
         'startNetCapture', 'stopNetCapture', 'getNetCapture', 'clearNetCapture',
         'newWindow', 'newIncognitoWindow', 'listWindows', 'closeWindow', 'resizeWindow',
-        'executeScript',
+        'executeScript', 'enableBlock', 'disableBlock',
+        'waitForUrl',
     ];
 
     try {
@@ -490,6 +601,7 @@ async function cmdListTabs() {
             title: t.title,
             active: t.active,
             windowId: t.windowId,
+            cookieStoreId: t.cookieStoreId,
             incognito: windowIncognito[t.windowId] || false,
             index: t.index,
         }))
@@ -584,15 +696,249 @@ async function cmdCaptureScreenshot(tabId) {
     }
 }
 
+/**
+ * Full-page screenshot via scroll-and-stitch.
+ * 
+ * 1. Measures the full scrollHeight and viewport dimensions
+ * 2. Detects and hides sticky/fixed elements during middle frames
+ * 3. Scrolls through the page, capturing each viewport chunk
+ * 4. Stitches all frames into a single PNG using OffscreenCanvas
+ * 
+ * Zero detection signals — looks exactly like a human scrolling.
+ */
+async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
+    try {
+        if (!tabId) return { success: false, error: 'tabId required' };
+
+        // Activate tab and focus window
+        const tab = await chrome.tabs.get(tabId);
+        await chrome.tabs.update(tabId, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+        await new Promise(r => setTimeout(r, 200));
+
+        // Step 1: Measure page dimensions
+        const measureResults = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: () => ({
+                scrollHeight: document.documentElement.scrollHeight,
+                scrollWidth: document.documentElement.scrollWidth,
+                viewportHeight: window.innerHeight,
+                viewportWidth: window.innerWidth,
+                currentScrollY: window.scrollY,
+                devicePixelRatio: window.devicePixelRatio || 1,
+            }),
+        });
+
+        if (!measureResults || !measureResults[0]) {
+            return { success: false, error: 'Failed to measure page dimensions' };
+        }
+
+        const dims = measureResults[0].result;
+        const { viewportHeight, viewportWidth, devicePixelRatio } = dims;
+        // Cap the scroll height to prevent memory issues
+        const totalHeight = Math.min(dims.scrollHeight, maxHeight);
+        const frameCount = Math.ceil(totalHeight / viewportHeight);
+        const MAX_FRAMES = 50;
+
+        if (frameCount > MAX_FRAMES) {
+            return { success: false, error: `Page too tall: ${totalHeight}px would need ${frameCount} frames (max ${MAX_FRAMES}). Increase maxHeight or reduce page size.` };
+        }
+
+        // If the page fits in one viewport, just use regular screenshot
+        if (frameCount <= 1) {
+            return await cmdCaptureScreenshot(tabId);
+        }
+
+        // Step 2: Scroll to top and detect sticky elements
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: () => {
+                window.scrollTo(0, 0);
+                // Find and tag sticky/fixed elements for later hiding
+                const stickyEls = [];
+                const allEls = document.querySelectorAll('*');
+                for (const el of allEls) {
+                    const style = window.getComputedStyle(el);
+                    if (style.position === 'fixed' || style.position === 'sticky') {
+                        // Only hide elements that are visible and take up space
+                        if (el.offsetHeight > 0 && el.offsetWidth > 0) {
+                            el.dataset.__stealthdomOrigPos = style.position;
+                            el.dataset.__stealthdomOrigVis = el.style.visibility || '';
+                            stickyEls.push(el);
+                        }
+                    }
+                }
+                window.__stealthdomStickyCount = stickyEls.length;
+            },
+        });
+        await new Promise(r => setTimeout(r, 200));
+
+        // Step 3: Capture loop
+        const frames = [];
+        for (let i = 0; i < frameCount; i++) {
+            const scrollY = i * viewportHeight;
+            const isFirst = i === 0;
+            const isLast = i === frameCount - 1;
+
+            // Scroll to position
+            await chrome.scripting.executeScript({
+                target: { tabId },
+                world: 'MAIN',
+                func: (y, hideSticky) => {
+                    window.scrollTo(0, y);
+                    // Hide sticky elements during middle frames to avoid duplication
+                    if (hideSticky) {
+                        const els = document.querySelectorAll('[data-__stealthdom-orig-pos]');
+                        els.forEach(el => { el.style.visibility = 'hidden'; });
+                    } else {
+                        // Restore for first/last frames
+                        const els = document.querySelectorAll('[data-__stealthdom-orig-pos]');
+                        els.forEach(el => {
+                            el.style.visibility = el.dataset.__stealthdomOrigVis || '';
+                        });
+                    }
+                },
+                args: [scrollY, !isFirst && !isLast],
+            });
+
+            // Wait for lazy content to hydrate
+            await new Promise(r => setTimeout(r, 150));
+
+            // Capture this frame
+            const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+                format: 'png',
+                quality: 100,
+            });
+            frames.push({ dataUrl, scrollY });
+        }
+
+        // Step 4: Restore sticky elements and original scroll position
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: (origScrollY) => {
+                const els = document.querySelectorAll('[data-__stealthdom-orig-pos]');
+                els.forEach(el => {
+                    el.style.visibility = el.dataset.__stealthdomOrigVis || '';
+                    delete el.dataset.__stealthdomOrigPos;
+                    delete el.dataset.__stealthdomOrigVis;
+                });
+                window.scrollTo(0, origScrollY);
+            },
+            args: [dims.currentScrollY],
+        });
+
+        // Step 5: Stitch frames using OffscreenCanvas
+        // The actual pixel dimensions of each capture depend on devicePixelRatio
+        const pixelWidth = viewportWidth * devicePixelRatio;
+        const pixelViewportHeight = viewportHeight * devicePixelRatio;
+
+        // Calculate the actual total pixel height
+        // Last frame may be a partial viewport
+        const lastFrameContentHeight = totalHeight - (frameCount - 1) * viewportHeight;
+        const pixelTotalHeight = ((frameCount - 1) * viewportHeight + lastFrameContentHeight) * devicePixelRatio;
+
+        const canvas = new OffscreenCanvas(pixelWidth, pixelTotalHeight);
+        const ctx = canvas.getContext('2d');
+
+        for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            // Convert data URL to blob to ImageBitmap
+            const resp = await fetch(frame.dataUrl);
+            const blob = await resp.blob();
+            const bmp = await createImageBitmap(blob);
+
+            const drawY = i * pixelViewportHeight;
+
+            if (i === frames.length - 1) {
+                // Last frame: only draw the portion that contains new content
+                // (avoid overlapping with the previous frame)
+                const remainingHeight = pixelTotalHeight - drawY;
+                // The captured image is a full viewport, but we only need the bottom portion
+                const sourceY = bmp.height - remainingHeight;
+                if (sourceY > 0) {
+                    ctx.drawImage(bmp, 0, sourceY, bmp.width, remainingHeight, 0, drawY, bmp.width, remainingHeight);
+                } else {
+                    ctx.drawImage(bmp, 0, drawY);
+                }
+            } else {
+                ctx.drawImage(bmp, 0, drawY);
+            }
+            bmp.close();
+        }
+
+        // Export as PNG
+        const resultBlob = await canvas.convertToBlob({ type: 'image/png' });
+
+        // Convert blob to data URL
+        const arrayBuffer = await resultBlob.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+        let binary = '';
+        // Process in chunks to avoid call stack overflow on large images
+        const CHUNK_SIZE = 65536;
+        for (let offset = 0; offset < uint8.length; offset += CHUNK_SIZE) {
+            const chunk = uint8.subarray(offset, Math.min(offset + CHUNK_SIZE, uint8.length));
+            binary += String.fromCharCode.apply(null, chunk);
+        }
+        const base64 = btoa(binary);
+        const resultDataUrl = `data:image/png;base64,${base64}`;
+
+        return {
+            success: true,
+            data: {
+                dataUrl: resultDataUrl,
+                format: 'png',
+                tabId: tabId,
+                fullPage: true,
+                dimensions: {
+                    width: pixelWidth,
+                    height: pixelTotalHeight,
+                    frames: frameCount,
+                    maxHeight: maxHeight,
+                    actualHeight: totalHeight,
+                },
+            },
+        };
+    } catch (e) {
+        // Best-effort cleanup of sticky element markers
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId },
+                world: 'MAIN',
+                func: () => {
+                    const els = document.querySelectorAll('[data-__stealthdom-orig-pos]');
+                    els.forEach(el => {
+                        el.style.visibility = el.dataset.__stealthdomOrigVis || '';
+                        delete el.dataset.__stealthdomOrigPos;
+                        delete el.dataset.__stealthdomOrigVis;
+                    });
+                },
+            });
+        } catch (_) { /* ignore cleanup errors */ }
+        return { success: false, error: `Full-page screenshot failed: ${e.message}` };
+    }
+}
+
 // ==========================================
 // Cookies
 // ==========================================
 
-async function cmdGetCookies(url) {
+async function cmdGetCookies(url, tabId, storeId) {
     if (!url) {
         return { success: false, error: 'url required' };
     }
-    const cookies = await chrome.cookies.getAll({ url });
+    const query = { url };
+    if (storeId) {
+        query.storeId = storeId;
+    } else if (tabId) {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab && tab.cookieStoreId) {
+            query.storeId = tab.cookieStoreId;
+        }
+    }
+    const cookies = await chrome.cookies.getAll(query);
     return {
         success: true,
         data: cookies.map(c => ({
@@ -621,6 +967,11 @@ async function cmdDeleteCookie(url, name) {
     }
     await chrome.cookies.remove({ url, name });
     return { success: true };
+}
+
+async function cmdListCookieStores() {
+    const stores = await chrome.cookies.getAllCookieStores();
+    return { success: true, data: stores };
 }
 
 // ==========================================
@@ -858,11 +1209,73 @@ async function cmdResizeWindow(windowId, width, height, left, top) {
 
 
 // ==========================================
+// URL Waiting
+// ==========================================
+
+/**
+ * Wait for a tab's URL to match a pattern.
+ * Uses chrome.tabs.onUpdated for reliable SPA navigation detection.
+ * Also checks the current URL immediately in case it already matches.
+ *
+ * @param {number} tabId  - Target tab ID
+ * @param {string} pattern - String substring OR /regex/ pattern (e.g., '/checkout/')
+ * @param {number} timeout - Max wait in milliseconds (default 10000)
+ */
+async function cmdWaitForUrl(tabId, pattern, timeout = 10000) {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (!pattern) return { success: false, error: 'pattern required' };
+
+    function urlMatches(url) {
+        if (!url) return false;
+        // Regex pattern: surrounded by /
+        if (typeof pattern === 'string' && pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+            try {
+                const lastSlash = pattern.lastIndexOf('/');
+                const flags = pattern.slice(lastSlash + 1);
+                const body = pattern.slice(1, lastSlash);
+                return new RegExp(body, flags).test(url);
+            } catch (e) {
+                // Fall through to substring match
+            }
+        }
+        return url.includes(String(pattern));
+    }
+
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve({ success: false, error: `Timeout (${timeout}ms) waiting for URL matching: ${pattern}` });
+        }, timeout);
+
+        function listener(updatedTabId, changeInfo, tab) {
+            if (updatedTabId !== tabId) return;
+            const url = changeInfo.url || tab.url || '';
+            if (urlMatches(url)) {
+                clearTimeout(timer);
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve({ success: true, data: { url } });
+            }
+        }
+
+        chrome.tabs.onUpdated.addListener(listener);
+
+        // Check current URL immediately (in case it already matches)
+        chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError) return;
+            if (tab && urlMatches(tab.url)) {
+                clearTimeout(timer);
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve({ success: true, data: { url: tab.url } });
+            }
+        });
+    });
+}
+
+// ==========================================
 // Helpers
 // ==========================================
 
-// getActiveTabId() has been removed.
-// All commands now require an explicit tabId for reliable multi-window targeting.
-// Use browser_list_tabs() to discover tab IDs.
+// All commands require an explicit tabId for reliable multi-window, multi-browser targeting.
+// Use browser_list_tabs() to discover tab virtualIds.
 
 console.log('[StealthDOM] Service worker started (bridge mode)');

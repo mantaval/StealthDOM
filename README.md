@@ -8,9 +8,9 @@ StealthDOM replaces Playwright/Puppeteer by controlling the browser **from insid
 
 StealthDOM can be used in two ways:
 
-**AI Agents** connect via the MCP protocol — most commands exposed as tools with descriptions, so the agent knows what's available and how to use it.(see **05_api_reference.md** for complete api reference)
+**AI Agents** connect via the MCP protocol — 44 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **05_api_reference.md** for complete API reference)
 
-**Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses.(see **05_api_reference.md** for complete api reference)
+**Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses. (see **05_api_reference.md** for complete API reference)
 
 Both paths flow through the same pipeline:
 
@@ -24,10 +24,10 @@ Python Script  ──┘    (localhost:9878)
                   Background Service Worker
                   (localhost:9877, inside the extension)
                        │            │
-              Privileged ops    DOM commands
-             (tabs, windows,    forwarded via
-              screenshots,     chrome.tabs.sendMessage
-              cookies, JS)          │
+             Privileged ops    DOM commands
+            (tabs, windows,    forwarded via
+             screenshots,     chrome.tabs.sendMessage
+             cookies, JS)          │
                               Content Script
                            (injected into the page,
                             has native DOM access)
@@ -35,7 +35,7 @@ Python Script  ──┘    (localhost:9878)
 
 The **background service worker** owns the bridge connection and handles privileged browser APIs (tabs, windows, screenshots, cookies, JS execution). It runs in the extension's own context, completely separate from any web page.
 
-The **content script** is injected into every page and provides direct DOM access — clicking elements, reading text, filling inputs, scrolling, etc. It receives commands from the background worker via `chrome.tabs.sendMessage` and never initiates any network connections itself, bypassing all page-level CSP restrictions.
+The **content script** is injected into every page and provides direct DOM access — clicking elements, reading text, filling inputs, scrolling, hovering, drag-and-drop, etc. It receives commands from the background worker via `chrome.tabs.sendMessage` and never initiates any network connections itself, bypassing all page-level CSP restrictions.
 
 ## Why Not Playwright?
 
@@ -62,15 +62,17 @@ StealthDOM has been tested against major bot detection suites:
 
 ## Features
 
-- **35+ automation commands**: DOM queries, clicks, typing, scrolling, keyboard, mouse, navigation
+- **44 automation commands**: DOM queries, clicks, typing, scrolling, keyboard, hover, drag-and-drop, navigation
+- **Multi-browser support**: Connect Chrome, Brave, and Edge simultaneously — tabs from all browsers shown in one unified list
+- **Virtual tab IDs**: Namespaced as `"label:tabId"` (e.g., `"brave:12345"`) for transparent multi-browser routing
 - **Window management**: Open regular or incognito windows, resize, close
-- **Tab management**: List, open, close, switch tabs
-- **Screenshots**: Full-page PNG capture (with optional file save)
+- **Tab management**: List, open, close, switch tabs across all connected browsers
+- **Full-page screenshots**: Scroll-and-stitch PNG capture of entire documents (with optional file save)
 - **Cookies**: Get, set, delete
 - **JavaScript execution**: Arbitrary JS in page context — works on ALL sites including YouTube/Gmail (CSP headers auto-stripped)
-- **Network capture**: Record HTTP requests and responses
-- **Proxy Fetch**: Route HTTP requests through the browser's real TLS fingerprint
-- **MCP integration**: Full MCP server with 35+ tools, instructions, and capabilities resource
+- **Network capture**: Circular buffer (5,000 entries) with overflow detection
+- **Proxy Fetch**: Route HTTP requests through the browser's real TLS fingerprint and cookies
+- **MCP integration**: Full MCP server with 44 tools, instructions, and capabilities resource
 - **Explicit targeting**: All commands target tabs by ID — safe for multi-window, multi-agent use
 - **Enable/Disable toggle**: Click the extension icon to globally enable/disable (restores site security when not in use)
 
@@ -81,7 +83,11 @@ StealthDOM has been tested against major bot detection suites:
 
 2. **Install dependencies**:
    ```bash
-   pip install websockets mcp
+   pip install -r requirements.txt
+   ```
+   Or manually:
+   ```bash
+   pip install websockets mcp psutil
    ```
 
 3. **Start bridge**:
@@ -107,24 +113,41 @@ StealthDOM has been tested against major bot detection suites:
 
    async def main():
        ws = await websockets.connect("ws://127.0.0.1:9878")
-       
-       # List tabs to get tab IDs
+
+       # List tabs to get tab IDs (works across all connected browsers)
        msg_id = str(uuid.uuid4())[:8]
        await ws.send(json.dumps({"action": "listTabs", "_msg_id": msg_id, "_timeout": 5}))
        result = json.loads(await ws.recv())
        tabs = result["data"]
-       tab_id = tabs[0]["id"]
-       print(f"Using tab {tab_id}: {tabs[0]['title']}")
-       
-       # Get the page title using explicit tab ID
+
+       # Use virtualId for reliable multi-browser routing
+       tab = tabs[0]
+       tab_id = tab.get("virtualId") or tab["id"]
+       print(f"Using tab {tab_id}: {tab['title']}")
+
+       # Get the page title
        msg_id = str(uuid.uuid4())[:8]
        await ws.send(json.dumps({"action": "getTitle", "tabId": tab_id, "_msg_id": msg_id, "_timeout": 5}))
        print(json.loads(await ws.recv()))
-       
+
        await ws.close()
 
    asyncio.run(main())
    ```
+
+## Multi-Browser Support
+
+Multiple browsers can connect to the bridge simultaneously. Each browser's extension sends its label on connect (`chrome`, `brave`, `edge`, or `default`). The bridge routes commands to the correct browser automatically based on the tab's `virtualId`.
+
+```
+# Example: browser_list_tabs() output with two browsers connected
+[
+  {"id": 123, "virtualId": "brave:123", "browserId": "brave", "title": "...", ...},
+  {"id": 456, "virtualId": "chrome:456", "browserId": "chrome", "title": "...", ...}
+]
+```
+
+Always use `virtualId` as your `tab_id` to ensure commands reach the right browser.
 
 ## Documentation
 
@@ -137,8 +160,7 @@ StealthDOM has been tested against major bot detection suites:
 ## Requirements
 
 - Python 3.10+
-- `websockets` (`pip install websockets`)
-- `mcp` (`pip install mcp`)
+- `websockets`, `mcp`, `psutil` (`pip install -r requirements.txt`)
 - Any Chromium-based browser (Chrome, Brave, Edge, Opera, Vivaldi, etc.) with the extension loaded
 
 ## Disclaimer

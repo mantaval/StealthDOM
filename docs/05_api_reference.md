@@ -143,7 +143,7 @@ Get the bounding rectangle (position and size) of a DOM element.
 { "action": "getBoundingRect", "selector": "#button" }
 → { "data": { "x": 100, "y": 200, "width": 150, "height": 40, "top": 200, "left": 100, "bottom": 240, "right": 250 } }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_get_bounding_rect(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -207,7 +207,7 @@ Get the full HTML of the current page.
 { "action": "getPageHTML" }
 { "action": "getPageHTML", "maxLength": 50000 }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_get_page_html(tab_id, max_length=0)`  
 **Handled by:** Content Script
 
 ---
@@ -239,7 +239,7 @@ Double-click a DOM element. Element is scrolled into view first.
 ```json
 { "action": "dblclick", "selector": ".item" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_double_click(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -286,7 +286,7 @@ Focus a DOM element.
 ```json
 { "action": "focus", "selector": "#input" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_focus(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -301,7 +301,7 @@ Remove focus from a DOM element.
 ```json
 { "action": "blur", "selector": "#input" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_blur(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -331,7 +331,7 @@ Uncheck a checkbox (no-op if already unchecked).
 ```json
 { "action": "uncheck", "selector": "#checkbox" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_uncheck(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -362,7 +362,7 @@ Scroll an element smoothly into view (centered in viewport).
 ```json
 { "action": "scrollIntoView", "selector": ".target" }
 ```
-**MCP Tool:** `browser_scroll_to(tab_id, selector)`  
+**MCP Tool:** `browser_scroll_into_view(tab_id, selector)`  
 **Handled by:** Content Script
 
 ---
@@ -705,6 +705,25 @@ Capture a screenshot of a specific tab as PNG. The tab is activated and its wind
 ```
 **MCP Tool:** `browser_screenshot(tab_id, save_path=None)`  
 When `save_path` is provided, the MCP tool saves the PNG to disk and returns the file path.  
+**Handled by:** Background
+
+---
+
+### captureFullPageScreenshot
+Capture a full-page screenshot by scrolling through the page and stitching viewport captures into a single PNG. Sticky/fixed elements are automatically hidden during middle frames to avoid duplication. The page is restored to its original scroll position after capture.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tabId` | integer | ✅ | — | ID of the tab to screenshot |
+| `maxHeight` | integer | — | 20000 | Maximum page height to capture in pixels. Prevents memory issues on infinite-scroll pages. |
+
+```json
+{ "action": "captureFullPageScreenshot", "tabId": 123 }
+{ "action": "captureFullPageScreenshot", "tabId": 123, "maxHeight": 30000 }
+→ { "data": { "dataUrl": "data:image/png;base64,...", "fullPage": true, "dimensions": { "width": 2560, "height": 15360, "frames": 8, "actualHeight": 7680 } } }
+```
+**MCP Tool:** `browser_screenshot_full_page(tab_id, max_height=20000, save_path=None)`  
+When `save_path` is provided, saves the PNG to disk and returns the file path with dimensions info.  
 **Handled by:** Background
 
 ---

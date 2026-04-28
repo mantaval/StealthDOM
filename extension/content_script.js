@@ -65,6 +65,10 @@
                 return cmdClick(msg.selector);
             case 'dblclick':
                 return cmdDblClick(msg.selector);
+            case 'hover':
+                return cmdHover(msg.selector);
+            case 'dragAndDrop':
+                return await cmdDragAndDrop(msg.sourceSelector, msg.targetSelector);
             case 'type':
                 return cmdType(msg.selector, msg.text);
             case 'fill':
@@ -277,11 +281,70 @@
         return { success: true };
     }
 
+    /**
+     * Hover over an element. Triggers mouseenter + mouseover + mousemove.
+     * Useful for revealing dropdown menus, tooltips, hover states.
+     */
+    function cmdHover(selector) {
+        const el = document.querySelector(selector);
+        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        el.scrollIntoView({ block: 'center' });
+        const rect = el.getBoundingClientRect();
+        const cx = Math.round(rect.left + rect.width / 2);
+        const cy = Math.round(rect.top + rect.height / 2);
+        const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy };
+        el.dispatchEvent(new MouseEvent('mouseenter', opts));
+        el.dispatchEvent(new MouseEvent('mouseover', opts));
+        el.dispatchEvent(new MouseEvent('mousemove', opts));
+        return { success: true };
+    }
+
+    /**
+     * Drag-and-drop from source element to target element.
+     * Uses the HTML5 DragEvent API. Works for elements with draggable=true
+     * and libraries that listen for drag events (Kanban boards, sortable lists).
+     */
+    async function cmdDragAndDrop(sourceSelector, targetSelector) {
+        const source = document.querySelector(sourceSelector);
+        if (!source) return { success: false, error: `Source not found: ${sourceSelector}` };
+        const target = document.querySelector(targetSelector);
+        if (!target) return { success: false, error: `Target not found: ${targetSelector}` };
+
+        source.scrollIntoView({ block: 'center' });
+        const dt = new DataTransfer();
+
+        source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await sleep(50);
+        target.scrollIntoView({ block: 'center' });
+        target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        target.dispatchEvent(new DragEvent('dragover',  { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await sleep(50);
+        target.dispatchEvent(new DragEvent('drop',    { bubbles: true, cancelable: true, dataTransfer: dt }));
+        source.dispatchEvent(new DragEvent('dragend',  { bubbles: true, cancelable: true, dataTransfer: dt }));
+
+        return { success: true };
+    }
+
     function cmdType(selector, text) {
         const el = document.querySelector(selector);
         if (!el) return { success: false, error: `Element not found: ${selector}` };
         el.focus();
-        document.execCommand('insertText', false, text);
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            // Use native value setter for proper React/Vue/Angular compatibility
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+                el.tagName === 'INPUT' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+                'value'
+            );
+            if (nativeSetter && nativeSetter.set) {
+                nativeSetter.set.call(el, el.value + text);
+            } else {
+                el.value += text;
+            }
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text, inputType: 'insertText' }));
+        } else {
+            // contenteditable: execCommand is still the most reliable for Chromium
+            document.execCommand('insertText', false, text);
+        }
         return { success: true };
     }
 
@@ -291,11 +354,19 @@
         el.focus();
         // For regular inputs
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-            el.value = value;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+                el.tagName === 'INPUT' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+                'value'
+            );
+            if (nativeSetter && nativeSetter.set) {
+                nativeSetter.set.call(el, value);
+            } else {
+                el.value = value;
+            }
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, data: value, inputType: 'insertText' }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
         } else {
-            // For contenteditable (ProseMirror etc)
+            // For contenteditable (ProseMirror, Slate, etc.)
             document.execCommand('selectAll', false, null);
             document.execCommand('insertText', false, value);
         }

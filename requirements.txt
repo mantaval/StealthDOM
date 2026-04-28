@@ -1,0 +1,11 @@
+# StealthDOM — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# MCP server framework
+mcp>=1.0
+
+# WebSocket client/server (bridge + MCP layer)
+websockets>=12.0
+
+# Cross-platform process detection (used by bridge_server.py)
+psutil>=5.9

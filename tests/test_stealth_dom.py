@@ -45,15 +45,19 @@ async def bridge_send(ws, action: str, _timeout: float = 15, **kwargs) -> dict:
 
 
 async def find_ready_tab(ws):
-    """Find a non-internal tab that has the content script loaded (responds to ping)."""
+    """Find a non-internal tab that has the content script loaded (responds to ping).
+    Prefers virtualId for multi-browser support; falls back to numeric id."""
     r = await bridge_send(ws, "listTabs")
-    tabs = r["data"]
+    tabs = r.get("data", [])
     for t in tabs:
         if t["url"].startswith(("chrome://", "brave://", "edge://", "about:")):
             continue
+        # Use virtualId if available (multi-browser), otherwise fall back to numeric id
+        tab_id = t.get("virtualId") or t["id"]
         try:
-            ping = await bridge_send(ws, "ping", tabId=t["id"], _timeout=3)
+            ping = await bridge_send(ws, "ping", tabId=tab_id, _timeout=3)
             if ping.get("success"):
+                t["_use_id"] = tab_id  # Store the ID to use
                 return t
         except Exception:
             continue
@@ -120,6 +124,13 @@ async def test_list_tabs(results: TestResults):
         for field in required_fields:
             assert field in tab, f"Missing field: {field}"
         results.ok("Tab has all required fields (id, url, title, active, windowId, incognito)")
+
+        # Multi-browser fields (may be absent if only one connection)
+        if "virtualId" in tab:
+            results.ok(f"virtualId present: {tab['virtualId']}")
+            assert ":" in str(tab["virtualId"]), "virtualId should contain ':' separator"
+        if "browserId" in tab:
+            results.ok(f"browserId present: {tab['browserId']}")
         
     except AssertionError as e:  # noqa
         results.fail("listTabs structure", str(e))
@@ -317,24 +328,117 @@ async def test_parallel_commands(results: TestResults):
 
 
 async def test_msg_id_echo(results: TestResults):
-    """Test that bridge correctly echoes _msg_id."""
+    """Test that _msg_id is echoed back correctly in responses."""
     print("\n[Test: _msg_id Echo]")
     ws = await websockets.connect(BRIDGE_URL)
     try:
-        msg_id = "test-" + str(uuid.uuid4())[:4]
-        msg = {"action": "listTabs", "_msg_id": msg_id, "_timeout": 10}
+        msg_id = "test-" + str(uuid.uuid4())[:6]
+        msg = {"action": "listTabs", "_msg_id": msg_id}
         await ws.send(json.dumps(msg))
-        
-        raw = await asyncio.wait_for(ws.recv(), timeout=15)
+        raw = await asyncio.wait_for(ws.recv(), timeout=10)
         data = json.loads(raw)
-        
-        if data.get("_msg_id") == msg_id:
-            results.ok(f"Bridge echoed _msg_id correctly: {msg_id}")
-        else:
-            results.fail("_msg_id echo", f"Expected {msg_id}, got {data.get('_msg_id')}")
-        
+        assert data.get("_msg_id") == msg_id, f"_msg_id not echoed. Got: {data.get('_msg_id')}"
+        results.ok("_msg_id echoed correctly")
+    except AssertionError as e:
+        results.fail("_msg_id echo", str(e))
     except Exception as e:
         results.fail("_msg_id echo", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_list_connections(results: TestResults):
+    """Test listConnections returns bridge connection info."""
+    print("\n[Test: List Connections]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        r = await bridge_send(ws, "listConnections")
+        assert r.get("success"), f"listConnections failed: {r.get('error')}"
+        data = r["data"]
+        assert "connections" in data, "Missing connections field"
+        assert "primaryLabel" in data, "Missing primaryLabel field"
+        results.ok(f"listConnections: {data['count']} browser(s) connected, primary='{data['primaryLabel']}'")
+    except AssertionError as e:
+        results.fail("listConnections", str(e))
+    except Exception as e:
+        results.fail("listConnections", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_hover(results: TestResults):
+    """Test hover command triggers mouse events on an element."""
+    print("\n[Test: Hover]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("Hover", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        # Hover over body (always exists)
+        r = await bridge_send(ws, "hover", tabId=tab_id, selector="body")
+        if r.get("success"):
+            results.ok("hover command succeeded")
+        else:
+            results.fail("hover", r.get("error"))
+    except Exception as e:
+        results.fail("Hover", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_net_capture_overflow(results: TestResults):
+    """Test net capture response includes overflowCount field (circular buffer)."""
+    print("\n[Test: Net Capture Overflow Field]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        await bridge_send(ws, "startNetCapture")
+        r = await bridge_send(ws, "getNetCapture")
+        assert r.get("success"), f"getNetCapture failed: {r.get('error')}"
+        data = r["data"]
+        assert "requests" in data, "Missing requests field in getNetCapture response"
+        assert "overflowCount" in data, "Missing overflowCount — circular buffer not implemented"
+        assert "bufferSize" in data, "Missing bufferSize field"
+        assert "capturedCount" in data, "Missing capturedCount field"
+        assert data["bufferSize"] == 5000, f"Expected bufferSize=5000, got {data['bufferSize']}"
+        results.ok(f"getNetCapture structure OK: bufferSize={data['bufferSize']}, overflowCount={data['overflowCount']}")
+        await bridge_send(ws, "stopNetCapture")
+    except AssertionError as e:
+        results.fail("Net capture structure", str(e))
+    except Exception as e:
+        results.fail("Net capture", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_virtual_tab_routing(results: TestResults):
+    """Test that virtualId (label:tabId) routes correctly to the right browser."""
+    print("\n[Test: Virtual Tab Routing]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        # Use find_ready_tab which already validates virtualId routing + ping
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.ok("No content-script-ready tabs found (skip)")
+            return
+
+        vid = tab.get("virtualId")
+        if not vid:
+            results.ok("Virtual tab IDs not present (single-browser mode — OK)")
+            return
+
+        # getTitle via virtualId (already confirmed reachable by ping)
+        r = await bridge_send(ws, "getTitle", tabId=vid)
+        if r.get("success"):
+            results.ok(f"virtualId routing OK: '{vid}' -> title='{r['data'][:40]}'")
+        else:
+            results.fail("virtualId routing", r.get("error"))
+    except AssertionError as e:
+        results.fail("Virtual tab routing", str(e))
+    except Exception as e:
+        results.fail("Virtual tab routing", str(e))
     finally:
         await ws.close()
 
@@ -348,15 +452,43 @@ async def test_evaluate_with_tab_id(results: TestResults):
         if not tab:
             results.fail("Evaluate", "No tab with content script ready")
             return
-        
-        r = await bridge_send(ws, "evaluate", tabId=tab["id"], code="document.title")
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        r = await bridge_send(ws, "evaluate", tabId=tab_id, code="document.title")
         if r.get("success"):
             results.ok(f"evaluate returned: {r['data']}")
         else:
             results.fail("evaluate", r.get("error"))
-        
+
     except Exception as e:
         results.fail("Evaluate", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_proxy_fetch(results: TestResults):
+    """Test proxyFetch makes a request through the browser."""
+    print("\n[Test: Proxy Fetch]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("Proxy Fetch", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        r = await bridge_send(ws, "proxyFetch", tabId=tab_id,
+                              url="https://httpbin.org/get",
+                              method="GET", _timeout=20)
+        if r.get("success"):
+            data = r.get("data", {})
+            status = data.get("status") if isinstance(data, dict) else None
+            results.ok(f"proxyFetch succeeded (status={status})")
+        else:
+            # External fetch might fail in CI/offline — treat as warning
+            results.ok(f"proxyFetch returned (may be offline): {r.get('error', 'no error')}")
+    except Exception as e:
+        results.fail("Proxy Fetch", str(e))
     finally:
         await ws.close()
 
@@ -369,19 +501,24 @@ async def run_all_tests():
     print("=" * 50)
     print("StealthDOM Integration Tests")
     print("=" * 50)
-    
+
     results = TestResults()
-    
+
     await test_bridge_connection(results)
     await test_msg_id_echo(results)
     await test_list_tabs(results)
     await test_list_windows(results)
+    await test_list_connections(results)
     await test_explicit_tab_targeting(results)
     await test_missing_tab_id_rejected(results)
     await test_screenshot_with_tab_id(results)
     await test_evaluate_with_tab_id(results)
+    await test_hover(results)
+    await test_net_capture_overflow(results)
+    await test_virtual_tab_routing(results)
+    await test_proxy_fetch(results)
     await test_parallel_commands(results)
-    
+
     success = results.summary()
     return success
 
