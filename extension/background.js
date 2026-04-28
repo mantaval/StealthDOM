@@ -668,20 +668,54 @@ async function cmdGoForward(tabId) {
 // Screenshots
 // ==========================================
 
+/**
+ * Wrapper around captureVisibleTab that retries on quota errors.
+ * Chrome limits captureVisibleTab to ~2 calls/sec. If we exceed that
+ * (e.g., rapid full-page scroll loop) we back off and retry automatically.
+ */
+async function captureWithRetry(windowId, options, maxAttempts = 5) {
+    let delay = 600; // ms — start above the 1-second quota window
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await chrome.tabs.captureVisibleTab(windowId, options);
+        } catch (e) {
+            if (e.message && e.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') && attempt < maxAttempts) {
+                await new Promise(r => setTimeout(r, delay));
+                delay = Math.min(delay * 1.5, 3000); // cap at 3s
+                continue;
+            }
+            throw e;
+        }
+    }
+}
+
 async function cmdCaptureScreenshot(tabId) {
     try {
         if (!tabId) return { success: false, error: 'tabId required' };
-        // Activate the target tab and focus its window to ensure captureVisibleTab gets the right content
-        const tab = await chrome.tabs.get(tabId);
+
+        // Remember which window was focused so we can restore it after capture
+        const [prevWindow] = await chrome.windows.getAll({ populate: false })
+            .then(ws => ws.filter(w => w.focused));
+        const prevWindowId = prevWindow?.id;
+
+        // Remember this window's state BEFORE we force it to the front
+        const targetWindow = await chrome.windows.get(tab.windowId);
+        const wasMinimized = targetWindow.state === 'minimized';
+
         await chrome.tabs.update(tabId, { active: true });
-        await chrome.windows.update(tab.windowId, { focused: true });
+        await chrome.windows.update(tab.windowId, { focused: true, state: 'normal' });
         // Brief delay to let the tab render after activation
         await new Promise(r => setTimeout(r, 150));
 
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        const dataUrl = await captureWithRetry(tab.windowId, {
             format: 'png',
             quality: 90,
         });
+
+        // If the window was minimized before we stole focus, put it back
+        if (wasMinimized) {
+            chrome.windows.update(tab.windowId, { state: 'minimized' }).catch(() => {});
+        }
 
         return {
             success: true,
@@ -710,10 +744,19 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
     try {
         if (!tabId) return { success: false, error: 'tabId required' };
 
-        // Activate tab and focus window
+        // Remember which window was focused so we can restore it after capture
+        const [prevWindow] = await chrome.windows.getAll({ populate: false })
+            .then(ws => ws.filter(w => w.focused));
+        const prevWindowId = prevWindow?.id;
+
+        // Activate tab and focus window (required for captureVisibleTab)
         const tab = await chrome.tabs.get(tabId);
+        // Remember this window's state BEFORE we force it to the front
+        const targetWindow = await chrome.windows.get(tab.windowId);
+        const wasMinimized = targetWindow.state === 'minimized';
+
         await chrome.tabs.update(tabId, { active: true });
-        await chrome.windows.update(tab.windowId, { focused: true });
+        await chrome.windows.update(tab.windowId, { focused: true, state: 'normal' });
         await new Promise(r => setTimeout(r, 200));
 
         // Step 1: Measure page dimensions
@@ -807,7 +850,7 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
             await new Promise(r => setTimeout(r, 150));
 
             // Capture this frame
-            const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+            const dataUrl = await captureWithRetry(tab.windowId, {
                 format: 'png',
                 quality: 100,
             });
@@ -875,15 +918,20 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
         // Convert blob to data URL
         const arrayBuffer = await resultBlob.arrayBuffer();
         const uint8 = new Uint8Array(arrayBuffer);
+        // Chunk-spread approach: 8192 args is well under V8 stack limit (~125k)
+        // and orders of magnitude faster than char-by-char concatenation.
+        const CHUNK = 8192;
         let binary = '';
-        // Process in chunks to avoid call stack overflow on large images
-        const CHUNK_SIZE = 65536;
-        for (let offset = 0; offset < uint8.length; offset += CHUNK_SIZE) {
-            const chunk = uint8.subarray(offset, Math.min(offset + CHUNK_SIZE, uint8.length));
-            binary += String.fromCharCode.apply(null, chunk);
+        for (let i = 0; i < uint8.length; i += CHUNK) {
+            binary += String.fromCharCode(...uint8.subarray(i, i + CHUNK));
         }
         const base64 = btoa(binary);
         const resultDataUrl = `data:image/png;base64,${base64}`;
+
+        // If the window was minimized before we stole focus, put it back
+        if (wasMinimized) {
+            chrome.windows.update(tab.windowId, { state: 'minimized' }).catch(() => {});
+        }
 
         return {
             success: true,
