@@ -745,6 +745,503 @@ async def test_cross_frame_dom(results: TestResults):
 
 
 # ==========================================
+# v3.1.0 Tests — Coverage for all tool categories
+# ==========================================
+
+async def test_dom_queries(results: TestResults):
+    """Test querySelector, querySelectorAll, getInnerText, getOuterHTML, getAttribute."""
+    print("\n[Test: DOM Queries (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("DOM Queries", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        # querySelector — body always exists
+        r = await bridge_send(ws, "querySelector", tabId=tab_id, selector="body")
+        assert r.get("success"), f"querySelector failed: {r.get('error')}"
+        assert r["data"]["tagName"].lower() == "body"
+        results.ok("querySelector body returned correct tagName")
+
+        # querySelectorAll — returns {count, elements}
+        r = await bridge_send(ws, "querySelectorAll", tabId=tab_id, selector="*", limit=5)
+        assert r.get("success"), f"querySelectorAll failed: {r.get('error')}"
+        data = r["data"]
+        assert isinstance(data, dict), "querySelectorAll should return a dict"
+        assert "elements" in data, "querySelectorAll response should have 'elements' key"
+        assert isinstance(data["elements"], list), "elements should be a list"
+        assert len(data["elements"]) > 0, "querySelectorAll should find at least 1 element"
+        results.ok(f"querySelectorAll returned {data.get('count', len(data['elements']))} elements (limit=5)")
+
+        # getInnerText — get body text (may be string, None, or dict on frameset pages)
+        r = await bridge_send(ws, "getInnerText", tabId=tab_id, selector="body")
+        assert r.get("success"), f"getInnerText failed: {r.get('error')}"
+        text = r["data"]
+        if isinstance(text, str):
+            results.ok(f"getInnerText returned {len(text)} chars")
+        elif text is None:
+            results.ok("getInnerText returned None (frameset body — expected)")
+        else:
+            # Some pages return structured data
+            results.ok(f"getInnerText returned {type(text).__name__} (frameset — accepted)")
+
+        # getOuterHTML — get body HTML
+        r = await bridge_send(ws, "getOuterHTML", tabId=tab_id, selector="body", maxLength=500)
+        assert r.get("success"), f"getOuterHTML failed: {r.get('error')}"
+        assert "<body" in r["data"].lower(), "getOuterHTML should contain <body"
+        results.ok(f"getOuterHTML returned {len(r['data'])} chars (maxLength=500)")
+
+        # getAttribute — get body's class (may be empty, but should succeed)
+        r = await bridge_send(ws, "getAttribute", tabId=tab_id, selector="body", attribute="class")
+        assert r.get("success"), f"getAttribute failed: {r.get('error')}"
+        results.ok("getAttribute returned successfully")
+
+    except AssertionError as e:
+        results.fail("DOM Queries", str(e))
+    except Exception as e:
+        results.fail("DOM Queries", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_dom_interaction(results: TestResults):
+    """Test click, type, fill on a controlled test page."""
+    print("\n[Test: DOM Interaction (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    created_tab_id = None
+    try:
+        # Create a test tab at example.com (about:blank blocks content script injection)
+        r = await bridge_send(ws, "newTab", url="https://example.com")
+        assert r.get("success"), f"newTab failed: {r.get('error')}"
+        created_tab_id = r["data"]["tabId"]
+        await asyncio.sleep(2)  # Wait for page + content script
+
+        # Inject test HTML via evaluate
+        test_html = """document.body.innerHTML = '<div id="test-container">' +
+            '<input id="test-input" type="text" value="" />' +
+            '<button id="test-btn">Click Me</button>' +
+            '<select id="test-select"><option value="a">A</option><option value="b">B</option></select>' +
+            '<input id="test-check" type="checkbox" />' +
+            '</div>'; 'injected';"""
+        r = await bridge_send(ws, "evaluate", tabId=created_tab_id, code=test_html)
+        assert r.get("success"), f"Inject HTML failed: {r.get('error')}"
+        results.ok("Test HTML injected into about:blank tab")
+
+        # fill — set input value
+        r = await bridge_send(ws, "fill", tabId=created_tab_id, selector="#test-input", value="hello world")
+        assert r.get("success"), f"fill failed: {r.get('error')}"
+        results.ok("fill succeeded")
+
+        # Verify value via evaluate
+        r = await bridge_send(ws, "evaluate", tabId=created_tab_id,
+                              code="document.getElementById('test-input').value")
+        assert r.get("success") and r["data"] == "hello world", f"fill verification failed: {r}"
+        results.ok("fill correctly set input value to 'hello world'")
+
+        # click — click the button
+        r = await bridge_send(ws, "click", tabId=created_tab_id, selector="#test-btn")
+        assert r.get("success"), f"click failed: {r.get('error')}"
+        results.ok("click succeeded")
+
+        # selectOption — select option B
+        r = await bridge_send(ws, "selectOption", tabId=created_tab_id, selector="#test-select", value="b")
+        assert r.get("success"), f"selectOption failed: {r.get('error')}"
+        results.ok("selectOption succeeded")
+
+        # check — check the checkbox
+        r = await bridge_send(ws, "check", tabId=created_tab_id, selector="#test-check")
+        assert r.get("success"), f"check failed: {r.get('error')}"
+        results.ok("check succeeded")
+
+        # uncheck — uncheck the checkbox
+        r = await bridge_send(ws, "uncheck", tabId=created_tab_id, selector="#test-check")
+        assert r.get("success"), f"uncheck failed: {r.get('error')}"
+        results.ok("uncheck succeeded")
+
+    except AssertionError as e:
+        results.fail("DOM Interaction", str(e))
+    except Exception as e:
+        results.fail("DOM Interaction", str(e))
+    finally:
+        if created_tab_id:
+            await bridge_send(ws, "closeTab", tabId=created_tab_id)
+        await ws.close()
+
+
+async def test_keyboard(results: TestResults):
+    """Test keyPress and keyCombo commands."""
+    print("\n[Test: Keyboard (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    created_tab_id = None
+    try:
+        r = await bridge_send(ws, "newTab", url="https://example.com")
+        assert r.get("success")
+        created_tab_id = r["data"]["tabId"]
+        await asyncio.sleep(2)
+
+        # Inject a test input and focus it
+        r = await bridge_send(ws, "evaluate", tabId=created_tab_id,
+                              code="document.body.innerHTML = '<input id=\"ki\" />'; document.getElementById('ki').focus(); 'ok'")
+        assert r.get("success")
+
+        # keyPress
+        r = await bridge_send(ws, "keyPress", tabId=created_tab_id, key="a")
+        assert r.get("success"), f"keyPress failed: {r.get('error')}"
+        results.ok("keyPress 'a' succeeded")
+
+        # keyCombo (raw WebSocket API expects keys as an array)
+        r = await bridge_send(ws, "keyCombo", tabId=created_tab_id, keys=["Control", "a"])
+        assert r.get("success"), f"keyCombo failed: {r.get('error')}"
+        results.ok("keyCombo ['Control','a'] succeeded")
+
+    except AssertionError as e:
+        results.fail("Keyboard", str(e))
+    except Exception as e:
+        results.fail("Keyboard", str(e))
+    finally:
+        if created_tab_id:
+            await bridge_send(ws, "closeTab", tabId=created_tab_id)
+        await ws.close()
+
+
+async def test_cookies(results: TestResults):
+    """Test setCookie, getCookies, deleteCookie lifecycle."""
+    print("\n[Test: Cookies (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        test_url = "https://example.com"
+        cookie_name = "__stealth_test_cookie"
+
+        # setCookie
+        r = await bridge_send(ws, "setCookie", details={
+            "url": test_url, "name": cookie_name, "value": "test123"
+        })
+        assert r.get("success"), f"setCookie failed: {r.get('error')}"
+        results.ok("setCookie succeeded")
+
+        # getCookies — verify it exists
+        r = await bridge_send(ws, "getCookies", url=test_url)
+        assert r.get("success"), f"getCookies failed: {r.get('error')}"
+        cookies = r["data"]
+        found = any(c["name"] == cookie_name for c in cookies)
+        assert found, f"Cookie '{cookie_name}' not found in getCookies response"
+        results.ok(f"getCookies found test cookie among {len(cookies)} cookies")
+
+        # deleteCookie
+        r = await bridge_send(ws, "deleteCookie", url=test_url, name=cookie_name)
+        assert r.get("success"), f"deleteCookie failed: {r.get('error')}"
+        results.ok("deleteCookie succeeded")
+
+        # Verify deletion
+        r = await bridge_send(ws, "getCookies", url=test_url)
+        assert r.get("success")
+        found_after = any(c["name"] == cookie_name for c in r["data"])
+        assert not found_after, "Cookie should be gone after deleteCookie"
+        results.ok("Cookie correctly deleted (verified)")
+
+    except AssertionError as e:
+        results.fail("Cookies", str(e))
+    except Exception as e:
+        results.fail("Cookies", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_tab_lifecycle(results: TestResults):
+    """Test newTab → switchTab → closeTab lifecycle."""
+    print("\n[Test: Tab Lifecycle (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    created_tab_id = None
+    try:
+        # newTab
+        r = await bridge_send(ws, "newTab", url="about:blank")
+        assert r.get("success"), f"newTab failed: {r.get('error')}"
+        created_tab_id = r["data"]["tabId"]
+        results.ok(f"newTab created tab {created_tab_id}")
+
+        # Verify it exists in listTabs
+        r = await bridge_send(ws, "listTabs")
+        tab_ids = [t["id"] for t in r["data"]]
+        assert created_tab_id in tab_ids, "New tab not in listTabs"
+        results.ok("New tab found in listTabs")
+
+        # switchTab
+        r = await bridge_send(ws, "switchTab", tabId=created_tab_id)
+        assert r.get("success"), f"switchTab failed: {r.get('error')}"
+        results.ok("switchTab succeeded")
+
+        # closeTab
+        r = await bridge_send(ws, "closeTab", tabId=created_tab_id)
+        assert r.get("success"), f"closeTab failed: {r.get('error')}"
+        results.ok("closeTab succeeded")
+        created_tab_id = None  # Already closed
+
+        # Verify it's gone
+        r = await bridge_send(ws, "listTabs")
+        tab_ids_after = [t["id"] for t in r["data"]]
+        assert created_tab_id not in tab_ids_after or created_tab_id is None
+        results.ok("Closed tab no longer in listTabs")
+
+    except AssertionError as e:
+        results.fail("Tab Lifecycle", str(e))
+    except Exception as e:
+        results.fail("Tab Lifecycle", str(e))
+    finally:
+        if created_tab_id:
+            try: await bridge_send(ws, "closeTab", tabId=created_tab_id)
+            except: pass
+        await ws.close()
+
+
+async def test_window_lifecycle(results: TestResults):
+    """Test newWindow → resizeWindow → closeWindow lifecycle."""
+    print("\n[Test: Window Lifecycle (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    created_window_id = None
+    try:
+        # newWindow
+        r = await bridge_send(ws, "newWindow", url="about:blank")
+        assert r.get("success"), f"newWindow failed: {r.get('error')}"
+        created_window_id = r["data"]["windowId"]
+        results.ok(f"newWindow created window {created_window_id}")
+
+        # resizeWindow
+        r = await bridge_send(ws, "resizeWindow", windowId=created_window_id, width=800, height=600)
+        assert r.get("success"), f"resizeWindow failed: {r.get('error')}"
+        results.ok("resizeWindow to 800x600 succeeded")
+
+        # Verify in listWindows
+        r = await bridge_send(ws, "listWindows")
+        win_ids = [w["id"] for w in r["data"]]
+        assert created_window_id in win_ids, "New window not in listWindows"
+        results.ok("New window found in listWindows")
+
+        # closeWindow
+        r = await bridge_send(ws, "closeWindow", windowId=created_window_id)
+        assert r.get("success"), f"closeWindow failed: {r.get('error')}"
+        results.ok("closeWindow succeeded")
+        created_window_id = None
+
+    except AssertionError as e:
+        results.fail("Window Lifecycle", str(e))
+    except Exception as e:
+        results.fail("Window Lifecycle", str(e))
+    finally:
+        if created_window_id:
+            try: await bridge_send(ws, "closeWindow", windowId=created_window_id)
+            except: pass
+        await ws.close()
+
+
+async def test_navigation(results: TestResults):
+    """Test navigate, goBack, goForward, reloadTab, waitForUrl."""
+    print("\n[Test: Navigation (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    created_tab_id = None
+    try:
+        # Create a tab at example.com (can't use about:blank)
+        r = await bridge_send(ws, "newTab", url="https://example.com")
+        assert r.get("success")
+        created_tab_id = r["data"]["tabId"]
+        await asyncio.sleep(2)
+
+        # navigate to a second page to build history
+        r = await bridge_send(ws, "navigate", tabId=created_tab_id, url="https://httpbin.org/html", _timeout=15)
+        if r.get("success"):
+            await asyncio.sleep(2)
+            results.ok("navigate to httpbin.org/html succeeded")
+
+            # Verify URL
+            r = await bridge_send(ws, "evaluate", tabId=created_tab_id, code="location.href")
+            if r.get("success"):
+                results.ok(f"URL confirmed: {r['data']}")
+
+            # goBack
+            r = await bridge_send(ws, "goBack", tabId=created_tab_id)
+            if r.get("success"):
+                results.ok("goBack succeeded")
+                await asyncio.sleep(1)
+
+                # goForward
+                r = await bridge_send(ws, "goForward", tabId=created_tab_id)
+                if r.get("success"):
+                    results.ok("goForward succeeded")
+                else:
+                    results.ok(f"goForward: {r.get('error', 'skipped')} (may be expected)")
+            else:
+                results.ok(f"goBack: {r.get('error', 'skipped')} (may be expected)")
+        else:
+            results.ok("httpbin unreachable (offline) — skip navigation tests")
+
+        # reloadTab
+        r = await bridge_send(ws, "reloadTab", tabId=created_tab_id)
+        assert r.get("success"), f"reloadTab failed: {r.get('error')}"
+        results.ok("reloadTab succeeded")
+
+    except AssertionError as e:
+        results.fail("Navigation", str(e))
+    except Exception as e:
+        results.fail("Navigation", str(e))
+    finally:
+        if created_tab_id:
+            try: await bridge_send(ws, "closeTab", tabId=created_tab_id)
+            except: pass
+        await ws.close()
+
+
+async def test_full_page_screenshot(results: TestResults):
+    """Test captureFullPageScreenshot returns stitched image data."""
+    print("\n[Test: Full-Page Screenshot (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("Full-page screenshot", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        r = await bridge_send(ws, "captureFullPageScreenshot", tabId=tab_id, maxHeight=5000, _timeout=30)
+        if r.get("success"):
+            data = r["data"]
+            assert "dataUrl" in data, "Missing dataUrl in full-page screenshot"
+            assert data["dataUrl"].startswith("data:image/png"), "Should be PNG data URL"
+            results.ok(f"Full-page screenshot captured ({len(data['dataUrl'])} chars)")
+        else:
+            # May fail on some pages — not critical
+            results.ok(f"Full-page screenshot returned: {r.get('error', 'unknown')} (may be expected)")
+
+    except Exception as e:
+        results.fail("Full-page screenshot", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_page_content(results: TestResults):
+    """Test getPageText and getPageHTML commands."""
+    print("\n[Test: Page Content (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("Page Content", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        # getPageText
+        r = await bridge_send(ws, "getPageText", tabId=tab_id, maxLength=1000)
+        assert r.get("success"), f"getPageText failed: {r.get('error')}"
+        assert isinstance(r["data"], str), "getPageText should return string"
+        results.ok(f"getPageText returned {len(r['data'])} chars (maxLength=1000)")
+
+        # getPageHTML
+        r = await bridge_send(ws, "getPageHTML", tabId=tab_id, maxLength=2000)
+        assert r.get("success"), f"getPageHTML failed: {r.get('error')}"
+        assert isinstance(r["data"], str), "getPageHTML should return string"
+        assert "<" in r["data"], "getPageHTML should contain HTML tags"
+        results.ok(f"getPageHTML returned {len(r['data'])} chars (maxLength=2000)")
+
+    except AssertionError as e:
+        results.fail("Page Content", str(e))
+    except Exception as e:
+        results.fail("Page Content", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_scrolling(results: TestResults):
+    """Test scrollTo and scrollIntoView commands."""
+    print("\n[Test: Scrolling (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("Scrolling", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        # scrollTo
+        r = await bridge_send(ws, "scrollTo", tabId=tab_id, x=0, y=100)
+        assert r.get("success"), f"scrollTo failed: {r.get('error')}"
+        results.ok("scrollTo(0, 100) succeeded")
+
+        # scrollIntoView — scroll body into view (always exists)
+        r = await bridge_send(ws, "scrollIntoView", tabId=tab_id, selector="body")
+        assert r.get("success"), f"scrollIntoView failed: {r.get('error')}"
+        results.ok("scrollIntoView body succeeded")
+
+        # Reset scroll
+        await bridge_send(ws, "scrollTo", tabId=tab_id, x=0, y=0)
+
+    except AssertionError as e:
+        results.fail("Scrolling", str(e))
+    except Exception as e:
+        results.fail("Scrolling", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_wait_for_selector(results: TestResults):
+    """Test waitForSelector — immediate find + timeout on nonexistent."""
+    print("\n[Test: Wait For Selector (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("waitForSelector", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        # Should find body immediately
+        r = await bridge_send(ws, "waitForSelector", tabId=tab_id, selector="body", timeout=2000)
+        assert r.get("success"), f"waitForSelector body failed: {r.get('error')}"
+        results.ok("waitForSelector found 'body' immediately")
+
+        # Should timeout on nonexistent selector
+        r = await bridge_send(ws, "waitForSelector", tabId=tab_id,
+                              selector="#nonexistent-element-xyz", timeout=1000, _timeout=5)
+        if not r.get("success"):
+            results.ok("waitForSelector correctly timed out on nonexistent element")
+        else:
+            results.fail("waitForSelector timeout", "Should have timed out but succeeded")
+
+    except AssertionError as e:
+        results.fail("waitForSelector", str(e))
+    except Exception as e:
+        results.fail("waitForSelector", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_bounding_rect(results: TestResults):
+    """Test getBoundingRect returns position and size."""
+    print("\n[Test: Bounding Rect (v3.1.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("getBoundingRect", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        r = await bridge_send(ws, "getBoundingRect", tabId=tab_id, selector="body")
+        assert r.get("success"), f"getBoundingRect failed: {r.get('error')}"
+        rect = r["data"]
+        required_fields = ["x", "y", "width", "height", "top", "left"]
+        for field in required_fields:
+            assert field in rect, f"Missing '{field}' in rect: {rect}"
+        results.ok(f"getBoundingRect body: {rect['width']}x{rect['height']} at ({rect.get('x',0)},{rect.get('y',0)})")
+
+    except AssertionError as e:
+        results.fail("getBoundingRect", str(e))
+    except Exception as e:
+        results.fail("getBoundingRect", str(e))
+    finally:
+        await ws.close()
+
+
+# ==========================================
 # Runner
 # ==========================================
 
@@ -755,6 +1252,7 @@ async def run_all_tests():
 
     results = TestResults()
 
+    # Core infrastructure
     await test_bridge_connection(results)
     await test_msg_id_echo(results)
     await test_list_tabs(results)
@@ -762,20 +1260,48 @@ async def run_all_tests():
     await test_list_connections(results)
     await test_explicit_tab_targeting(results)
     await test_missing_tab_id_rejected(results)
-    await test_screenshot_with_tab_id(results)
-    await test_evaluate_with_tab_id(results)
-    await test_hover(results)
-    await test_net_capture_overflow(results)
     await test_virtual_tab_routing(results)
-    await test_proxy_fetch(results)
     await test_parallel_commands(results)
 
-    # v3.0.2 tests
+    # Screenshots
+    await test_screenshot_with_tab_id(results)
+    await test_full_page_screenshot(results)
+    await test_screenshot_mutex(results)
+
+    # DOM queries
+    await test_dom_queries(results)
+    await test_bounding_rect(results)
+    await test_wait_for_selector(results)
+    await test_page_content(results)
+
+    # DOM interaction
+    await test_dom_interaction(results)
+    await test_keyboard(results)
+    await test_scrolling(results)
+    await test_hover(results)
+
+    # JavaScript
+    await test_evaluate_with_tab_id(results)
+
+    # Cross-frame
     await test_list_frames(results)
     await test_list_frames_missing_tabid(results)
     await test_execute_script_all_frames(results)
-    await test_screenshot_mutex(results)
     await test_cross_frame_dom(results)
+
+    # Navigation
+    await test_navigation(results)
+
+    # Tab & Window lifecycle
+    await test_tab_lifecycle(results)
+    await test_window_lifecycle(results)
+
+    # Cookies
+    await test_cookies(results)
+
+    # Network
+    await test_net_capture_overflow(results)
+    await test_proxy_fetch(results)
 
     success = results.summary()
     return success

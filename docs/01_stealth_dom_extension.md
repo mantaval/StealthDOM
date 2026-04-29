@@ -76,7 +76,7 @@ StealthDOM/
 │                                 instructions and capabilities resource.
 │
 ├── tests/
-│   └── test_stealth_dom.py    ← Integration test suite (39 assertions across 19 test functions)
+│   └── test_stealth_dom.py    ← Integration test suite (90 assertions across 31 test functions)
 │
 └── docs/                      ← This documentation
 ```
@@ -211,7 +211,10 @@ and close the browser, it stays disabled the next time you open it.
 
 ---
 
-## Full Command API (46 Commands)
+## Full Command API
+
+> The extension supports ~55 raw WebSocket commands. The MCP server wraps **51** of these as tools.
+> Commands listed below as **WebSocket-only** are accessible via direct WebSocket JSON but do not have MCP tool wrappers.
 
 ### DOM Queries
 ```json
@@ -223,17 +226,17 @@ and close the browser, it stays disabled the next time you open it.
 { "action": "getPageText" }
 { "action": "getPageHTML", "maxLength": 50000 }
 { "action": "waitForSelector", "selector": ".loaded", "timeout": 10000 }
-{ "action": "waitForText", "selector": "#status", "text": "Done", "timeout": 5000 }
+{ "action": "waitForText", "selector": "#status", "text": "Done", "timeout": 5000 }  ← WebSocket-only
 ```
 
 ### DOM Interaction
 ```json
 { "action": "click", "selector": "button.submit" }
-{ "action": "dblclick", "selector": ".item" }
+{ "action": "dblclick", "selector": ".item" }                           ← WebSocket-only
 { "action": "type", "selector": "#input", "text": "hello world" }
 { "action": "fill", "selector": "#input", "value": "hello world" }
-{ "action": "focus", "selector": "#input" }
-{ "action": "blur", "selector": "#input" }
+{ "action": "focus", "selector": "#input" }                              ← WebSocket-only
+{ "action": "blur", "selector": "#input" }                               ← WebSocket-only
 { "action": "check", "selector": "#checkbox" }
 { "action": "uncheck", "selector": "#checkbox" }
 { "action": "selectOption", "selector": "#dropdown", "value": "option1" }
@@ -247,12 +250,15 @@ and close the browser, it stays disabled the next time you open it.
 { "action": "keyCombo", "keys": ["Control", "Shift", "d"] }
 ```
 
-### Mouse
+### Mouse (WebSocket-only)
 ```json
 { "action": "mouseClick", "x": 100, "y": 200, "button": "left" }
 { "action": "mouseMove", "x": 100, "y": 200 }
 { "action": "mouseWheel", "deltaX": 0, "deltaY": 500 }
 ```
+
+> These mouse commands operate on viewport coordinates and are available via direct WebSocket only.
+> For element-based interaction, use the MCP-wrapped `click`, `hover`, or `scrollIntoView` tools instead.
 
 ### Page Info
 ```json
@@ -326,7 +332,7 @@ and close the browser, it stays disabled the next time you open it.
 > CSP headers are automatically stripped via `declarativeNetRequest` on page load.  
 > Supports both expressions (`document.title`) and return statements (`return 2 + 2`).
 
-### DOM Manipulation
+### DOM Manipulation (WebSocket-only)
 ```json
 { "action": "removeByText", "selector": "ytd-rich-shelf-renderer", "texts": ["Shorts"] }
 → { "success": true, "data": { "removed": 1, "selector": "...", "texts": [...] } }
@@ -415,11 +421,11 @@ asyncio.run(test())
 
 ## MCP Integration
 
-StealthDOM includes a full MCP server (`stealth_dom_mcp.py`) that exposes all 46 commands as MCP tools. The server includes:
+StealthDOM includes a full MCP server (`stealth_dom_mcp.py`) that exposes **51** commands as MCP tools. The server includes:
 
 - **Instructions**: Automatically sent to AI agents explaining what StealthDOM is and why to use it over Playwright
 - **Capabilities Resource**: A static `stealth://capabilities` resource AI agents can read for full tool reference (string embedded directly inside stealth_dom_mcp.py for agent consumption)
-- **46 Tools**: Every command has a corresponding MCP tool with descriptive docstrings
+- **51 Tools**: Every major command has a corresponding MCP tool with descriptive docstrings
 
 ### MCP Configuration
 
