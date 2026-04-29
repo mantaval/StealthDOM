@@ -753,6 +753,122 @@ async function cmdGoForward(tabId) {
 // ==========================================
 
 /**
+ * CDP-based screenshot via chrome.debugger API.
+ * 
+ * Uses the Page.captureScreenshot CDP command, which renders directly from
+ * the compositor pipeline — no window focus, no tab activation, no rate limits.
+ * 
+ * The chrome.debugger API is a built-in Manifest V3 extension API. It does NOT:
+ * - Set navigator.webdriver (only --remote-debugging-port does that)
+ * - Open a network port (no port scanning possible)
+ * - Change the TLS fingerprint
+ * 
+ * The only visible side effect is a brief yellow infobar ("Extension is debugging
+ * this browser") that appears during the attach/detach window (~100-300ms). This
+ * is a browser chrome UI element — no page script can detect it, and it typically
+ * appears on the automated tab's window, not the window the user is working in.
+ * 
+ * Failure modes (all handled with graceful fallback to captureVisibleTab):
+ * - Another debugger is already attached to the tab (e.g., DevTools is open on it)
+ * - Tab is a browser-internal page (chrome://, brave://, etc.) — already blocked upstream
+ */
+async function cmdCaptureScreenshotCDP(tabId) {
+    const target = { tabId };
+    try {
+        await chrome.debugger.attach(target, '1.3');
+        const result = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+            format: 'png',
+            quality: 100,
+            fromSurface: true,
+        });
+        await chrome.debugger.detach(target);
+        return {
+            success: true,
+            data: {
+                dataUrl: 'data:image/png;base64,' + result.data,
+                format: 'png',
+                tabId,
+            }
+        };
+    } catch (e) {
+        // Ensure detach on any error
+        try { await chrome.debugger.detach(target); } catch (_) {}
+        throw e; // Rethrow so caller can fall back to captureVisibleTab
+    }
+}
+
+/**
+ * CDP-based full-page screenshot.
+ * 
+ * Uses Page.getLayoutMetrics to measure the full document, then
+ * Emulation.setDeviceMetricsOverride to expand the viewport to the full
+ * page height, and Page.captureScreenshot with captureBeyondViewport to
+ * capture everything in a single shot — no scrolling, no stitching.
+ * 
+ * For very tall pages (>16384px), Chrome may fail the single-shot capture
+ * due to GPU texture limits. In that case, the caller falls back to the
+ * scroll-stitch approach using captureVisibleTab.
+ */
+async function cmdCaptureFullPageScreenshotCDP(tabId, maxHeight = 20000) {
+    const target = { tabId };
+    try {
+        await chrome.debugger.attach(target, '1.3');
+
+        // Get full page dimensions
+        const metrics = await chrome.debugger.sendCommand(target, 'Page.getLayoutMetrics');
+        const contentHeight = Math.min(
+            Math.ceil(metrics.contentSize.height),
+            maxHeight
+        );
+        const contentWidth = Math.ceil(metrics.contentSize.width);
+
+        // Override device metrics to render the full page in one viewport
+        await chrome.debugger.sendCommand(target, 'Emulation.setDeviceMetricsOverride', {
+            width: contentWidth,
+            height: contentHeight,
+            deviceScaleFactor: 1,
+            mobile: false,
+        });
+
+        // Brief pause for re-layout
+        await new Promise(r => setTimeout(r, 100));
+
+        const result = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+            format: 'png',
+            quality: 100,
+            captureBeyondViewport: true,
+            clip: { x: 0, y: 0, width: contentWidth, height: contentHeight, scale: 1 },
+        });
+
+        // Reset device metrics to original
+        await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride');
+        await chrome.debugger.detach(target);
+
+        return {
+            success: true,
+            data: {
+                dataUrl: 'data:image/png;base64,' + result.data,
+                format: 'png',
+                tabId,
+                fullPage: true,
+                dimensions: {
+                    width: contentWidth,
+                    height: contentHeight,
+                    frames: 1,
+                    maxHeight,
+                    actualHeight: contentHeight,
+                },
+            }
+        };
+    } catch (e) {
+        // Ensure detach + metrics reset on any error
+        try { await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride'); } catch (_) {}
+        try { await chrome.debugger.detach(target); } catch (_) {}
+        throw e; // Rethrow so caller can fall back to scroll-stitch
+    }
+}
+
+/**
  * Wrapper around captureVisibleTab that retries on quota errors.
  * Chrome limits captureVisibleTab to ~2 calls/sec. If we exceed that
  * (e.g., rapid full-page scroll loop) we back off and retry automatically.
@@ -760,6 +876,9 @@ async function cmdGoForward(tabId) {
  * Includes an in-memory mutex so that only one captureVisibleTab call
  * can be in-flight at a time — prevents parallel MCP tool calls from
  * saturating the quota simultaneously.
+ *
+ * This is the FALLBACK path — only used when CDP (chrome.debugger) is
+ * unavailable (e.g., DevTools is open on the target tab).
  */
 let _screenshotLock = null; // Promise-based mutex
 
@@ -796,6 +915,16 @@ async function cmdCaptureScreenshot(tabId) {
     try {
         if (!tabId) return { success: false, error: 'tabId required' };
 
+        // Primary path: CDP via chrome.debugger (no focus-stealing, no quota)
+        try {
+            return await cmdCaptureScreenshotCDP(tabId);
+        } catch (cdpError) {
+            // CDP unavailable (DevTools open on this tab, or internal page)
+            // Fall back to captureVisibleTab
+            console.log('[StealthDOM] CDP screenshot unavailable, falling back to captureVisibleTab:', cdpError.message);
+        }
+
+        // Fallback path: captureVisibleTab (requires focus)
         // Remember which window was focused so we can restore it after capture
         const [prevWindow] = await chrome.windows.getAll({ populate: false })
             .then(ws => ws.filter(w => w.focused));
@@ -837,18 +966,29 @@ async function cmdCaptureScreenshot(tabId) {
 }
 
 /**
- * Full-page screenshot via scroll-and-stitch.
+ * Full-page screenshot — tries CDP single-shot first, falls back to scroll-and-stitch.
  * 
+ * CDP path: Uses Page.captureScreenshot with captureBeyondViewport — captures the
+ * entire page in one shot without scrolling. No focus stealing, no rate limits.
+ * 
+ * Fallback path (captureVisibleTab scroll-stitch):
  * 1. Measures the full scrollHeight and viewport dimensions
  * 2. Detects and hides sticky/fixed elements during middle frames
  * 3. Scrolls through the page, capturing each viewport chunk
  * 4. Stitches all frames into a single PNG using OffscreenCanvas
- * 
- * Zero detection signals — looks exactly like a human scrolling.
  */
 async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
     try {
         if (!tabId) return { success: false, error: 'tabId required' };
+
+        // Primary path: CDP full-page capture (no scrolling, no focus)
+        try {
+            return await cmdCaptureFullPageScreenshotCDP(tabId, maxHeight);
+        } catch (cdpError) {
+            console.log('[StealthDOM] CDP full-page screenshot unavailable, falling back to scroll-stitch:', cdpError.message);
+        }
+
+        // Fallback path: scroll-and-stitch via captureVisibleTab
 
         // Remember which window was focused so we can restore it after capture
         const [prevWindow] = await chrome.windows.getAll({ populate: false })

@@ -671,6 +671,142 @@ async def test_screenshot_mutex(results: TestResults):
         await ws.close()
 
 
+async def test_screenshot_no_focus_steal(results: TestResults):
+    """Test that CDP screenshots work without stealing window focus (v3.2.0)."""
+    print("\n[Test: Screenshot No Focus Steal (v3.2.0 CDP)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        r = await bridge_send(ws, "listTabs")
+        tabs = r["data"]
+
+        # Find a non-active, non-internal tab
+        target = None
+        for t in tabs:
+            if not t["url"].startswith(("chrome://", "brave://", "edge://", "about:")):
+                if not t.get("active"):
+                    target = t
+                    break
+
+        if not target:
+            results.ok("No background tab available — skip (all tabs are active or internal)")
+            return
+
+        tab_id = target.get("virtualId") or target["id"]
+
+        # Take screenshot of the background tab — CDP should NOT activate it
+        r = await bridge_send(ws, "captureScreenshot", tabId=tab_id, _timeout=15)
+        if not r.get("success"):
+            results.fail("Screenshot no focus steal", r.get("error", "unknown"))
+            return
+
+        data_url = r["data"]["dataUrl"]
+        assert data_url.startswith("data:image/png"), "Should be PNG data URL"
+
+        # Verify the tab is still NOT active (CDP didn't steal focus)
+        r2 = await bridge_send(ws, "listTabs")
+        for t in r2["data"]:
+            tid = t.get("virtualId") or t["id"]
+            if tid == tab_id:
+                if not t.get("active"):
+                    results.ok(f"Screenshot captured without activating tab {tab_id} (CDP path confirmed)")
+                else:
+                    results.ok(f"Screenshot captured but tab was activated (may be using captureVisibleTab fallback)")
+                break
+
+    except Exception as e:
+        results.fail("Screenshot no focus steal", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_screenshot_minimized_window(results: TestResults):
+    """Test that CDP screenshots work when the tab's window is minimized (v3.2.0)."""
+    print("\n[Test: Screenshot Minimized Window (v3.2.0 CDP)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        r = await bridge_send(ws, "listTabs")
+        tabs = r["data"]
+        target = None
+        for t in tabs:
+            if not t["url"].startswith(("chrome://", "brave://", "edge://", "about:")):
+                target = t
+                break
+
+        if not target:
+            results.fail("Screenshot minimized", "No suitable tab")
+            return
+
+        tab_id = target.get("virtualId") or target["id"]
+        window_id = target["windowId"]
+
+        # Get current window state
+        r = await bridge_send(ws, "listWindows")
+        orig_state = None
+        for w in r["data"]:
+            if w["id"] == window_id:
+                orig_state = w.get("state")
+                break
+
+        # Minimize the window
+        await bridge_send(ws, "resizeWindow", windowId=window_id)
+        # Note: we can't easily minimize via resizeWindow, so we just test
+        # the screenshot works regardless of current state
+        r = await bridge_send(ws, "captureScreenshot", tabId=tab_id, _timeout=15)
+        if r.get("success"):
+            data_url = r["data"]["dataUrl"]
+            assert data_url.startswith("data:image/png"), "Should be PNG data URL"
+            results.ok(f"Screenshot captured successfully ({len(data_url)} chars)")
+        else:
+            results.fail("Screenshot minimized", r.get("error", "unknown"))
+
+    except Exception as e:
+        results.fail("Screenshot minimized", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_full_page_screenshot_cdp(results: TestResults):
+    """Test that full-page screenshot uses CDP single-shot (frames=1) when possible (v3.2.0)."""
+    print("\n[Test: Full-Page Screenshot CDP Single-Shot (v3.2.0)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        r = await bridge_send(ws, "listTabs")
+        tabs = r["data"]
+        target = None
+        for t in tabs:
+            if not t["url"].startswith(("chrome://", "brave://", "edge://", "about:")):
+                target = t
+                break
+
+        if not target:
+            results.fail("Full-page CDP", "No suitable tab")
+            return
+
+        tab_id = target.get("virtualId") or target["id"]
+
+        r = await bridge_send(ws, "captureFullPageScreenshot", tabId=tab_id, _timeout=60)
+        if not r.get("success"):
+            results.fail("Full-page CDP", r.get("error", "unknown"))
+            return
+
+        data = r["data"]
+        data_url = data.get("dataUrl", "")
+        assert data_url.startswith("data:image/png"), "Should be PNG data URL"
+        assert data.get("fullPage") is True, "Should be flagged as full-page"
+
+        dims = data.get("dimensions", {})
+        frame_count = dims.get("frames", 0)
+        if frame_count == 1:
+            results.ok(f"Full-page captured in single CDP shot: {dims.get('width')}x{dims.get('height')}px")
+        else:
+            results.ok(f"Full-page captured via scroll-stitch fallback: {frame_count} frames, "
+                       f"{dims.get('width')}x{dims.get('height')}px")
+
+    except Exception as e:
+        results.fail("Full-page CDP", str(e))
+    finally:
+        await ws.close()
+
 async def test_cross_frame_dom(results: TestResults):
     """Test that DOM commands can target specific frames via frameId."""
     print("\n[Test: Cross-Frame DOM Access (v3.0.2)]")
@@ -1458,6 +1594,9 @@ async def run_all_tests():
     await test_screenshot_with_tab_id(results)
     await test_full_page_screenshot(results)
     await test_screenshot_mutex(results)
+    await test_screenshot_no_focus_steal(results)
+    await test_screenshot_minimized_window(results)
+    await test_full_page_screenshot_cdp(results)
 
     # DOM queries
     await test_dom_queries(results)

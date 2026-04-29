@@ -53,10 +53,13 @@ The quota persists across failed attempts — even failed calls consume the quot
 Chrome's `chrome.tabs.captureVisibleTab` API enforces a hard rate limit of ~2 calls/second per extension. Failed attempts still count against the limit. Parallel tool calls (e.g., attempting two screenshots simultaneously) immediately saturate the quota.
 
 ### Fix Applied (v3.0.1)
-Added `captureWithRetry()` helper in `background.js` that catches quota errors and retries with exponential backoff (600ms base, 1.5× multiplier, 3s cap, 5 max attempts). This is live in the current codebase.
+Added `captureWithRetry()` helper in `background.js` that catches quota errors and retries with exponential backoff (600ms base, 1.5× multiplier, 3s cap, 5 max attempts).
 
 ### Fix Applied (v3.0.2)
-Added a Promise-based mutex (`_screenshotLock`) wrapping `captureWithRetry()`. The MCP layer previously had no awareness of quota state — parallel `browser_screenshot` calls would saturate the quota simultaneously. The mutex ensures only one `captureVisibleTab` call can be in-flight at a time; any parallel call awaits the lock. Combined with the v3.0.1 retry logic, this fully resolves the issue.
+Added a Promise-based mutex (`_screenshotLock`) wrapping `captureWithRetry()`. The mutex ensures only one `captureVisibleTab` call can be in-flight at a time.
+
+### Fix Applied (v3.2.0) — Eliminated
+Switched to CDP-based screenshots via `chrome.debugger` API. CDP's `Page.captureScreenshot` has no rate limit — the `captureVisibleTab` quota is no longer relevant. The mutex and retry logic remain as the fallback path for when CDP is unavailable (e.g., DevTools is open on the target tab).
 
 ---
 
@@ -86,10 +89,10 @@ Both screenshot functions now:
 1. Record `targetWindow.state` before stealing focus
 2. Re-minimize the window after capture if `wasMinimized === true`
 
-The flash is still visible (~150ms) but the window returns to its previous state automatically.
+### Fix Applied (v3.2.0) — Eliminated
+Switched to CDP-based screenshots via `chrome.debugger` API. CDP's `Page.captureScreenshot` renders directly from the compositor pipeline — no window focus, no tab activation required. The focus-steal only occurs in the fallback path (when DevTools is open on the target tab).
 
-### Future Option
-See `docs/06_screenshot_approaches.md` for a full analysis of the `html2canvas` silent screenshot approach, which would eliminate the focus steal entirely at the cost of ~10% visual fidelity.
+See `docs/06_screenshot_approaches.md` and `docs/07_benefits_of_cdp_addition.md` for the full technical analysis.
 
 ---
 
@@ -98,12 +101,12 @@ See `docs/06_screenshot_approaches.md` for a full analysis of the `html2canvas` 
 | # | Issue | Status | Effort to Fix |
 |---|-------|--------|---------------|
 | 1 | Cross-frame DOM access (`<frameset>`, iframes) | ✅ Fixed (v3.0.2) | Done — `browser_list_frames` + `browser_evaluate_all_frames` |
-| 2 | `captureVisibleTab` quota errors | ✅ Fixed (v3.0.2) | Done — mutex + retry |
+| 2 | `captureVisibleTab` quota errors | ✅ Eliminated (v3.2.0) | CDP has no rate limit; mutex/retry remain as fallback |
 | 3 | Full-page screenshot stack overflow | ✅ Fixed | Done |
-| 4 | Window focus steal during screenshots | ✅ Mitigated (restore) | See `06_screenshot_approaches.md` for full fix |
+| 4 | Window focus steal during screenshots | ✅ Eliminated (v3.2.0) | CDP renders from compositor; no focus needed |
 
 ---
 
 ## All Issues Resolved
 
-As of v3.0.2, all known issues are either fully fixed or mitigated with documented fallback paths. The only remaining enhancement opportunity is Issue 4's silent screenshot approach via `html2canvas` (documented in `docs/06_screenshot_approaches.md`).
+As of v3.2.0, all known issues are fully resolved. CDP-based screenshots via `chrome.debugger` eliminated the focus-stealing and rate-limiting problems entirely. The `captureVisibleTab` path remains as an automatic fallback.

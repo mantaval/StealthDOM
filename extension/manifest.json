@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "StealthDOM",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "StealthDOM: Undetectable browser automation via WebSocket bridge",
   "permissions": [
     "tabs",
@@ -10,7 +10,8 @@
     "scripting",
     "webRequest",
     "declarativeNetRequest",
-    "storage"
+    "storage",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"

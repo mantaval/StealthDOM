@@ -693,7 +693,7 @@ Resize a browser window.
 ## Screenshots
 
 ### captureScreenshot
-Capture a screenshot of a specific tab as PNG. The tab is activated and its window focused before capture.
+Capture a screenshot of a specific tab as PNG. Uses CDP (`chrome.debugger`) for silent capture — no tab activation or window focus required. Falls back to `captureVisibleTab` if CDP is unavailable (e.g., DevTools is open on the target tab).
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -705,12 +705,12 @@ Capture a screenshot of a specific tab as PNG. The tab is activated and its wind
 ```
 **MCP Tool:** `browser_screenshot(tab_id, save_path=None)`  
 When `save_path` is provided, the MCP tool saves the PNG to disk and returns the file path.  
-**Handled by:** Background
+**Handled by:** Background (CDP primary, captureVisibleTab fallback)
 
 ---
 
 ### captureFullPageScreenshot
-Capture a full-page screenshot by scrolling through the page and stitching viewport captures into a single PNG. Sticky/fixed elements are automatically hidden during middle frames to avoid duplication. The page is restored to its original scroll position after capture.
+Capture a full-page screenshot. Uses CDP single-shot rendering when available — captures the entire page in one pass without scrolling. Falls back to scroll-and-stitch via `captureVisibleTab` if CDP is unavailable. Sticky/fixed elements are automatically hidden during middle frames in the fallback path.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -720,11 +720,11 @@ Capture a full-page screenshot by scrolling through the page and stitching viewp
 ```json
 { "action": "captureFullPageScreenshot", "tabId": 123 }
 { "action": "captureFullPageScreenshot", "tabId": 123, "maxHeight": 30000 }
-→ { "data": { "dataUrl": "data:image/png;base64,...", "fullPage": true, "dimensions": { "width": 2560, "height": 15360, "frames": 8, "actualHeight": 7680 } } }
+→ { "data": { "dataUrl": "data:image/png;base64,...", "fullPage": true, "dimensions": { "width": 2560, "height": 15360, "frames": 1, "actualHeight": 7680 } } }
 ```
 **MCP Tool:** `browser_screenshot_full_page(tab_id, max_height=20000, save_path=None)`  
 When `save_path` is provided, saves the PNG to disk and returns the file path with dimensions info.  
-**Handled by:** Background
+**Handled by:** Background (CDP primary, scroll-stitch fallback)
 
 ---
 

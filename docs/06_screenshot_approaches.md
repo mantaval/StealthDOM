@@ -1,114 +1,118 @@
-# Screenshot Approaches — Trade-offs & Future Options
+# Screenshot Approaches — Trade-offs & Implementation
 
-*Discussion notes: 2026-04-28*
-
----
-
-## The Problem
-
-`chrome.tabs.captureVisibleTab` — the only Chrome extension API for taking screenshots — requires the target tab's window to be **focused and visible** on screen. There is no way around this within the extension model. Every screenshot currently forces the browser window to pop to the front, disrupt the user's workflow, and stay there until the OS focus is restored manually.
-
-StealthDOM partially mitigates this by re-minimizing the window immediately after capture (`chrome.windows.update({ state: 'minimized' })`), but the flash is still visible.
+*Last updated: 2026-04-29*
 
 ---
 
-## How Other Tools Solve This
+## Current Implementation (v3.2.0)
 
-### 1. Playwright / Puppeteer — CDP `Page.captureScreenshot`
+StealthDOM uses **CDP via `chrome.debugger`** as the primary screenshot method, with
+`captureVisibleTab` as an automatic fallback. This hybrid approach eliminates the
+focus-stealing and rate-limiting problems of the previous implementation while maintaining
+zero bot-detection risk.
 
-Playwright does not have this problem. It uses the **Chrome DevTools Protocol (CDP)**, specifically the `Page.captureScreenshot` command, which renders and captures a tab entirely off-screen without touching window focus.
+### How It Works
 
 ```
-Playwright → CDP (port 9222) → Chrome Renderer → PNG
+MCP/WebSocket → background.js → chrome.debugger.attach(tabId)
+                               → Page.captureScreenshot (CDP)
+                               → chrome.debugger.detach(tabId)
+                               → base64 PNG returned
 ```
 
-The renderer captures directly from the compositing pipeline, not from what's physically on screen. The tab doesn't need to be active, visible, or even in a real window.
+The `chrome.debugger` extension API provides full CDP access without:
+- Setting `navigator.webdriver` (only `--remote-debugging-port` does that)
+- Opening a network port (no port scanning possible)
+- Changing the TLS fingerprint
+- Requiring any browser launch flags
 
-**Why StealthDOM can't use this:**  
-CDP requires launching Chrome with `--remote-debugging-port`, which sets `navigator.webdriver = true`, adds a detectable DevTools socket, changes the TLS fingerprint, and causes Cloudflare/DataDome to score the session as a bot. This is the *primary detection vector* for Playwright. Using CDP for screenshots only would still expose the debugging port to page-level detection scripts.
+The only visible side effect is a brief yellow infobar ("Extension is debugging this
+browser") that appears during the attach/detach window (~100-300ms). This is a browser
+chrome UI element — no page script can detect it. In the typical automation scenario,
+the automated tab is in a different window or not in focus, so the user never sees it.
 
----
+### Fallback Behavior
 
-### 2. Website Error Reporters — `html2canvas` / `dom-to-image`
+If CDP is unavailable — which only happens when another debugger is already attached
+to the target tab (e.g., DevTools is open on it) — StealthDOM falls back to the
+`captureVisibleTab` approach automatically. This fallback:
+- Activates the tab and focuses its window
+- Captures via `chrome.tabs.captureVisibleTab`
+- Re-minimizes the window if it was minimized before
 
-Services like **Sentry**, **LogRocket**, and **FullStory** take screenshots without any focus manipulation. They inject a JavaScript library (`html2canvas`) that:
+The fallback is transparent to the caller — the response shape is identical.
 
-1. Walks the entire DOM tree using `document.querySelectorAll` and `getComputedStyle`
-2. Re-paints every element onto an `<OffscreenCanvas>` using Canvas 2D API
-3. Calls `canvas.toDataURL('image/png')` and uploads the result
+### Full-Page Screenshots
 
-This runs entirely in the page's JavaScript context — no privileged APIs, no focus required, completely silent. It is functionally identical to what we already do with `browser_evaluate`.
+For full-page captures, CDP uses `Page.getLayoutMetrics` to measure the full document,
+`Emulation.setDeviceMetricsOverride` to expand the virtual viewport, and
+`Page.captureScreenshot` with `captureBeyondViewport: true` to render everything in
+a single shot. No scrolling, no stitching, no sticky-element hiding needed.
 
-**Why this works without focus:**  
-The Canvas 2D API renders from the DOM layout engine, not from the GPU compositor. It doesn't care what's on screen.
-
-**Trade-offs:**
-| | `captureVisibleTab` | `html2canvas` |
-|---|---|---|
-| Focus required | ✅ Yes (disruptive) | ❌ No (silent) |
-| Visual fidelity | 100% — GPU composite | ~90% — DOM re-render |
-| WebGL / Canvas elements | ✅ Captured | ❌ Often blank |
-| Cross-origin iframes | ✅ Captured | ❌ Blocked by CORS |
-| CSS animations | ✅ Current frame | ❌ Static snapshot |
-| Extension required | ✅ Yes | ❌ No (pure JS) |
-| Detection risk | Zero | Zero |
-
----
-
-### 3. `chrome.pageCapture` API
-
-Chrome extensions have a `chrome.pageCapture.saveAsMHTML()` API that saves the entire page (HTML + inlined resources) as an MHTML archive. This does **not** produce a visual screenshot — it's an HTML snapshot, not a PNG. Useful for archiving, not for visual capture.
+If CDP fails, the fallback uses the v3.0.x scroll-and-stitch approach:
+1. Measures scrollHeight and viewport dimensions
+2. Detects and hides sticky/fixed elements during middle frames
+3. Scrolls through the page, capturing each viewport chunk
+4. Stitches all frames into a single PNG using OffscreenCanvas
 
 ---
 
-## Recommended Future Implementation
+## Previous Approaches
 
-If the focus-disruption problem becomes unacceptable, the cleanest path is:
+### `captureVisibleTab` (v3.0.0–v3.1.0, now fallback)
 
-### `browser_screenshot_silent` — html2canvas injection
+`chrome.tabs.captureVisibleTab` — the only Chrome extension API for taking screenshots —
+requires the target tab's window to be **focused and visible** on screen. Every screenshot
+forces the browser window to pop to the front.
 
-1. Download `html2canvas.min.js` (~700KB) and place it in `extension/`
-2. Add it to `manifest.json` `web_accessible_resources`
-3. In `background.js`, create a new `cmdCaptureScreenshotSilent(tabId)` that:
-   - Injects `html2canvas.min.js` via `chrome.scripting.executeScript`
-   - Calls `html2canvas(document.body).then(c => c.toDataURL())`
-   - Returns the data URL
+StealthDOM mitigated this by:
+- Recording `targetWindow.state` before stealing focus
+- Re-minimizing the window after capture if `wasMinimized === true`
+- Adding a Promise-based mutex to prevent quota saturation
+- Adding `captureWithRetry()` with exponential backoff for rate-limit errors
 
-```javascript
-async function cmdCaptureScreenshotSilent(tabId) {
-    await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['html2canvas.min.js'],
-    });
-    const results = await chrome.scripting.executeScript({
-        target: { tabId },
-        world: 'MAIN',
-        func: () => html2canvas(document.documentElement)
-            .then(canvas => canvas.toDataURL('image/png')),
-    });
-    return { success: true, data: { dataUrl: results[0].result } };
-}
-```
+The flash was still visible (~150ms) and rate-limited to ~2 calls/second.
 
-4. Expose as `browser_screenshot_silent` in `stealth_dom_mcp.py`
+### Playwright / Puppeteer — CDP `Page.captureScreenshot` via `--remote-debugging-port`
 
-No window manipulation. No focus change. Completely invisible to the user.
+Playwright uses CDP via a remote debugging port, which renders and captures entirely
+off-screen. However, launching Chrome with `--remote-debugging-port` sets
+`navigator.webdriver = true`, adds a detectable DevTools socket, changes the TLS
+fingerprint, and causes Cloudflare/DataDome to score the session as a bot.
+
+**StealthDOM's `chrome.debugger` approach achieves the same CDP benefits without any
+of these detection vectors** — it's the extension-native path to CDP.
+
+### `html2canvas` / `dom-to-image`
+
+JavaScript libraries that re-render the DOM onto a Canvas element. No focus required,
+completely silent, but ~90% visual fidelity (CSS animations, WebGL, and cross-origin
+iframes are lost). This remains a viable third option if both CDP and captureVisibleTab
+are unsuitable.
 
 ---
 
-## Current StealthDOM Behavior (as of v3.0.0)
+## Comparison Table
 
-- `browser_screenshot` and `browser_screenshot_full_page` use `captureVisibleTab`
-- Both record the window state **before** stealing focus (`wasMinimized`)
-- Both re-minimize the window immediately after capture if it was minimized
-- The flash is unavoidable but brief (~150–200ms for a single screenshot)
-- Full-page screenshots flash for longer (one capture per viewport-height scroll step, each with a 150ms wait for lazy content)
+|  | CDP (`chrome.debugger`) | `captureVisibleTab` | `html2canvas` |
+|---|---|---|---|
+| Focus required | ❌ No (silent) | ✅ Yes (disruptive) | ❌ No (silent) |
+| Rate limit | None | ~2 calls/sec | None |
+| Visual fidelity | 100% — GPU composite | 100% — GPU composite | ~90% — DOM re-render |
+| WebGL / Canvas | ✅ Captured | ✅ Captured | ❌ Often blank |
+| Cross-origin iframes | ✅ Captured | ✅ Captured | ❌ Blocked by CORS |
+| CSS animations | ✅ Current frame | ✅ Current frame | ❌ Static snapshot |
+| Full-page (single shot) | ✅ captureBeyondViewport | ❌ Scroll-stitch | ❌ Manual scroll |
+| Bot detection risk | Zero | Zero | Zero |
+| Extension required | ✅ Yes (`debugger` perm) | ✅ Yes | ❌ No (pure JS) |
 
 ---
 
 ## References
 
 - [Chrome Extension API — `captureVisibleTab`](https://developer.chrome.com/docs/extensions/reference/api/tabs#method-captureVisibleTab)
+- [Chrome Extension API — `chrome.debugger`](https://developer.chrome.com/docs/extensions/reference/api/debugger)
 - [Chrome DevTools Protocol — `Page.captureScreenshot`](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot)
+- [Chrome DevTools Protocol — `Page.getLayoutMetrics`](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-getLayoutMetrics)
 - [html2canvas](https://html2canvas.hertzen.com/)
 - [dom-to-image-more](https://github.com/1904labs/dom-to-image-more) — modern fork, better CSS support

@@ -846,6 +846,10 @@ async def browser_get_page_html(tab_id: int | str, max_length: int = 0, frame_id
 async def browser_screenshot(tab_id: int | str, save_path: str | None = None) -> str:
     """Take a screenshot of the specified tab. Returns base64 PNG data URL.
     
+    Uses CDP (chrome.debugger) for silent capture — no window focus stealing,
+    no tab activation, no rate limits. Falls back to captureVisibleTab if CDP
+    is unavailable (e.g., DevTools is open on the target tab).
+    
     Args:
         tab_id: ID of the tab to screenshot (get from browser_list_tabs)
         save_path: Optional file path to save the screenshot as PNG (e.g., 'C:/screenshots/page.png').
@@ -873,6 +877,10 @@ async def browser_screenshot_full_page(tab_id: int | str, max_height: int = 2000
     """Take a full-page screenshot by scrolling and stitching viewport captures.
     Captures the entire document, not just the visible area. Sticky/fixed elements
     are automatically hidden during middle frames to avoid duplication.
+    
+    Uses CDP single-shot capture when available — renders the full page in one
+    pass without scrolling or focus stealing. Falls back to scroll-and-stitch
+    via captureVisibleTab if CDP is unavailable.
     
     Args:
         tab_id: ID of the tab to screenshot (get from browser_list_tabs)
