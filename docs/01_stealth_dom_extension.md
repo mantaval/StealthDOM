@@ -76,7 +76,7 @@ StealthDOM/
 │                                 instructions and capabilities resource.
 │
 ├── tests/
-│   └── test_stealth_dom.py    ← Integration test suite (90 assertions across 31 test functions)
+│   └── test_stealth_dom.py    ← Integration test suite (102 assertions across 36 test functions)
 │
 └── docs/                      ← This documentation
 ```

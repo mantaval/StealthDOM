@@ -18,6 +18,10 @@ The resulting scripts are included here as reference implementations. They show 
 | [**Gmail Inbox Reader**](gmail_read_inbox/) | Navigates to Gmail, searches for emails by keyword, opens the first match, and extracts subject, sender, date, and full body text |
 | [**YouTube Shorts Remover**](youtube_shorts_remover/) | Continuously polls YouTube and removes all Shorts elements from the homepage, search results, and sidebar as you browse |
 | [**Google Voice SMS Sender**](google_voice_sms/) | Sends SMS messages through Google Voice — takes a phone number and message as CLI arguments |
+| [**Grok Chat**](grok_chat/) | Sends a query to Grok (xAI) and extracts the response — handles X OAuth sign-in, contenteditable input, and streaming response detection |
+
+> [!TIP]
+> See also: **[WebAIInvestigations](../../WebAIInvestigations/)** — a standalone project that systematically reverse-engineers every major AI chat platform (ChatGPT, Gemini, Claude, Copilot, DeepSeek, Grok) using StealthDOM.
 
 ## Important Disclaimer
 

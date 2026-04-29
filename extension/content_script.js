@@ -193,7 +193,14 @@
 
     function cmdQuerySelector(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: true, data: null };
+        if (!el) {
+            // Check if iframes exist — hint the agent to use frame_id
+            const frameCount = document.querySelectorAll('iframe, frame').length;
+            const hint = frameCount > 0
+                ? ` (page has ${frameCount} iframe(s) — try browser_list_frames and pass frame_id)`
+                : '';
+            return { success: true, data: null, hint: `No element found matching: ${selector}${hint}` };
+        }
         return { success: true, data: serializeElement(el) };
     }
 
@@ -252,7 +259,12 @@
         const start = Date.now();
         while (Date.now() - start < timeout) {
             const el = document.querySelector(selector);
-            if (el) return { success: true, data: serializeElement(el) };
+            if (el) {
+                // Small debounce: SPAs (React/Angular) attach event listeners
+                // slightly after DOM insertion. Wait 50ms for hydration.
+                await sleep(50);
+                return { success: true, data: serializeElement(el) };
+            }
             await sleep(200);
         }
         return { success: false, error: `Timeout waiting for: ${selector}` };
@@ -278,6 +290,13 @@
         const el = document.querySelector(selector);
         if (!el) return { success: false, error: `Element not found: ${selector}` };
         el.scrollIntoView({ block: 'center' });
+        // Full event sequence for better SPA compatibility
+        const rect = el.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+        el.dispatchEvent(new MouseEvent('mousedown', opts));
+        el.dispatchEvent(new MouseEvent('mouseup', opts));
         el.click();
         return { success: true };
     }

@@ -239,7 +239,7 @@ Double-click a DOM element. Element is scrolled into view first.
 ```json
 { "action": "dblclick", "selector": ".item" }
 ```
-**MCP Tool:** `browser_double_click(tab_id, selector)`  
+**MCP Tool:** *WebSocket only — use `browser_evaluate` for double-click*  
 **Handled by:** Content Script
 
 ---
@@ -286,7 +286,7 @@ Focus a DOM element.
 ```json
 { "action": "focus", "selector": "#input" }
 ```
-**MCP Tool:** `browser_focus(tab_id, selector)`  
+**MCP Tool:** *WebSocket only — use `browser_evaluate` for focus*  
 **Handled by:** Content Script
 
 ---
@@ -301,7 +301,7 @@ Remove focus from a DOM element.
 ```json
 { "action": "blur", "selector": "#input" }
 ```
-**MCP Tool:** `browser_blur(tab_id, selector)`  
+**MCP Tool:** *WebSocket only — use `browser_evaluate` for blur*  
 **Handled by:** Content Script
 
 ---
@@ -890,6 +890,104 @@ Set files on a file input element using a data URL.
 ```
 **MCP Tool:** `browser_upload_file(tab_id, selector, data_url)`  
 **Handled by:** Content Script
+
+---
+
+### hover
+Hover over a DOM element. Triggers mouseenter, mouseover, and mousemove events.
+Useful for revealing dropdown menus, tooltips, and hover-activated UI.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `selector` | string | ✅ | — | CSS selector of element to hover over |
+
+```json
+{ "action": "hover", "selector": ".dropdown-trigger" }
+```
+**MCP Tool:** `browser_hover(tab_id, selector, frame_id=None)`  
+**Handled by:** Content Script
+
+---
+
+### dragAndDrop
+Drag an element and drop it onto another element using the HTML5 Drag API.
+Works for drag-enabled libraries (Kanban boards, sortable lists, file drop zones).
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `sourceSelector` | string | ✅ | — | CSS selector of the element to drag |
+| `targetSelector` | string | ✅ | — | CSS selector of the drop target |
+
+```json
+{ "action": "dragAndDrop", "sourceSelector": ".card", "targetSelector": ".column-done" }
+```
+**MCP Tool:** `browser_drag_and_drop(tab_id, source_selector, target_selector, frame_id=None)`  
+**Handled by:** Content Script
+
+---
+
+### waitForUrl
+Wait for the tab's URL to match a pattern. Ideal for SPA navigation.
+Pattern can be a substring (e.g., '/dashboard') or a regex (e.g., '/order/[0-9]+/').
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pattern` | string | ✅ | — | Substring or `/regex/` to match against the URL |
+| `timeout` | integer | — | 10000 | Maximum wait time in milliseconds |
+
+```json
+{ "action": "waitForUrl", "pattern": "/dashboard", "timeout": 15000 }
+```
+**MCP Tool:** `browser_wait_for_url(tab_id, pattern, timeout=10000)`  
+**Handled by:** Background Script
+
+---
+
+### listConnections
+List all browser connections currently active on the bridge.
+Useful when multiple browsers (e.g., Brave + Chrome) are connected simultaneously.
+
+```json
+{ "action": "listConnections" }
+→ { "data": { "connections": [...], "count": 2 } }
+```
+**MCP Tool:** `browser_list_connections()`  
+**Handled by:** Bridge Server
+
+---
+
+### listFrames
+List all frames (iframes, framesets) in a tab. Returns URL, title, element count, and body
+presence for each frame. Essential for pages where content lives inside iframes (Gmail, OAuth).
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tabId` | integer or string | ✅ | — | Tab ID |
+
+```json
+{ "action": "listFrames", "tabId": 12345 }
+→ { "data": [{ "frameId": 0, "url": "...", "hasBody": true, "elementCount": 150 }, ...] }
+```
+**MCP Tool:** `browser_list_frames(tab_id)`  
+**Handled by:** Background Script
+
+---
+
+### executeScriptAllFrames
+Execute JavaScript in ALL frames of a tab and return per-frame results.
+Use when target content lives inside an iframe and standard evaluate returns null.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `code` | string | ✅ | — | JavaScript code to evaluate in every frame |
+| `world` | string | — | `MAIN` | `MAIN` or `ISOLATED` |
+
+```json
+{ "action": "executeScriptAllFrames", "tabId": 12345, "code": "document.title" }
+→ { "data": [{ "frameIndex": 0, "frameId": 0, "result": "Page Title" }, ...] }
+```
+**MCP Tool:** `browser_evaluate_all_frames(tab_id, code, world='MAIN')`  
+**Handled by:** Background Script
 
 ---
 

@@ -621,22 +621,44 @@ async function bridgeForwardToContentScript(msg) {
         // Ensure content script is injected (no-op if already done for this tab)
         await ensureContentScriptInjected(targetId);
 
-        // Build sendMessage options — target a specific frame if frameId is provided.
-        // frameId comes from browser_list_frames output; 0 = top-level frame.
-        const sendOpts = {};
+        // Build sendMessage options — target a specific frame.
+        // Default to frameId 0 (top-level frame) when none specified.
+        // Without this, sendMessage broadcasts to ALL frames and returns
+        // whichever responds first — on SPAs with hidden iframes (tracking
+        // pixels, OAuth, etc.), a hidden iframe can respond before the
+        // main page, causing DOM queries to return wrong/empty results.
+        const sendOpts = { frameId: 0 };
         if (msg.frameId !== undefined && msg.frameId !== null) {
             sendOpts.frameId = msg.frameId;
         }
 
-        return await new Promise((resolve) => {
-            chrome.tabs.sendMessage(targetId, { ...msg, target: 'content' }, sendOpts, (response) => {
+        const contentMsg = { ...msg, target: 'content' };
+
+        // Try targeted frame first, fall back to broadcast if no response.
+        // This handles frameset pages (Gmail) where frame 0 may not have a
+        // content script listener, while still defaulting to frame 0 for
+        // SPAs (Twitter) that have hidden iframes.
+        const result = await new Promise((resolve) => {
+            chrome.tabs.sendMessage(targetId, contentMsg, sendOpts, (response) => {
                 if (chrome.runtime.lastError) {
-                    resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}` });
+                    // Frame 0 had no content script — retry without frameId (broadcast)
+                    if (msg.frameId === undefined || msg.frameId === null) {
+                        chrome.tabs.sendMessage(targetId, contentMsg, {}, (fallbackResp) => {
+                            if (chrome.runtime.lastError) {
+                                resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}` });
+                            } else {
+                                resolve(fallbackResp || { success: false, error: 'No response from content script' });
+                            }
+                        });
+                    } else {
+                        resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}` });
+                    }
                 } else {
                     resolve(response || { success: false, error: 'No response from content script' });
                 }
             });
         });
+        return result;
     } catch (e) {
         return { success: false, error: `Forward failed: ${e.message}` };
     }
