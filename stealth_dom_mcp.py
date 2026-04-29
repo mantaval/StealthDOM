@@ -401,7 +401,10 @@ async def browser_get_text(tab_id: int | str, selector: str, frame_id: int = Non
     result = await send_command("getInnerText", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
-    return result.get("data", {}).get("text", "")
+    data = result.get("data")
+    if isinstance(data, dict):
+        return data.get("text", "")
+    return str(data) if data is not None else ""
 
 
 @mcp.tool()
@@ -419,7 +422,10 @@ async def browser_get_html(tab_id: int | str, selector: str, max_length: int = 0
     result = await send_command("getOuterHTML", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
-    return result.get("data") or "Element not found"
+    data = result.get("data")
+    if data is None:
+        return "Element not found"
+    return data
 
 
 @mcp.tool()
@@ -437,7 +443,8 @@ async def browser_get_attribute(tab_id: int | str, selector: str, attribute: str
     result = await send_command("getAttribute", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
-    return str(result.get("data"))
+    val = result.get("data")
+    return str(val) if val is not None else "null"
 
 
 @mcp.tool()
@@ -811,7 +818,8 @@ async def browser_get_page_text(tab_id: int | str, max_length: int = 0, frame_id
     result = await send_command("getPageText", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
-    return result.get("data", "")
+    data = result.get("data", "")
+    return str(data) if data is not None else ""
 
 
 @mcp.tool()
@@ -828,7 +836,8 @@ async def browser_get_page_html(tab_id: int | str, max_length: int = 0, frame_id
     result = await send_command("getPageHTML", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
-    return result.get("data", "")
+    data = result.get("data", "")
+    return str(data) if data is not None else ""
 
 
 @mcp.tool()
@@ -900,6 +909,8 @@ async def browser_evaluate(tab_id: int | str, code: str, world: str = "MAIN") ->
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     data = result.get("data")
+    if data is None:
+        return "null"
     return json.dumps(data) if isinstance(data, (dict, list)) else str(data)
 
 
