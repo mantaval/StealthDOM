@@ -8,9 +8,9 @@ StealthDOM replaces Playwright/Puppeteer by controlling the browser **from insid
 
 StealthDOM can be used in two ways:
 
-**AI Agents** connect via the MCP protocol — 51 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **05_api_reference.md** for complete API reference)
+**AI Agents** connect via the MCP protocol — 51 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
 
-**Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses. (see **05_api_reference.md** for complete API reference)
+**Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
 
 Both paths flow through the same pipeline:
 
@@ -153,11 +153,11 @@ Always use `virtualId` as your `tab_id` to ensure commands reach the right brows
 
 ## Documentation
 
-- [**Installation & Setup Guide**](docs/04_installation_guide.md) — Step-by-step setup, MCP configuration for popular IDEs, auto-start on Windows
-- [**Full API Reference**](docs/05_api_reference.md) — Every command with parameters, WebSocket JSON, and MCP tool names
-- [Extension Architecture](docs/01_stealth_dom_extension.md)
-- [Connectivity Troubleshooting](docs/02_connectivity_troubleshooting.md)
-- [Bot Detection Test Results](docs/03_test_results.md)
+- [**Why StealthDOM?**](docs/00_why_stealthdom.md) — The case for inside-the-browser automation, comparison with Playwright, bot detection test results
+- [**Architecture & Design**](docs/01_architecture.md) — How it works, design decisions, CSP bypass, cross-frame support
+- [**Installation & Setup Guide**](docs/02_installation_guide.md) — Step-by-step setup, MCP configuration for popular IDEs, troubleshooting
+- [**Full API Reference**](docs/03_api_reference.md) — Every command with parameters, WebSocket JSON, and MCP tool names
+- [**Screenshot Approaches**](docs/04_screenshot_approaches.md) — CDP screenshot architecture, detection analysis, comparison
 
 ## Requirements
 
