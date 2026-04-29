@@ -64,7 +64,7 @@ class BridgeServer:
     def is_connected(self) -> bool:
         return len(self._connections) > 0
 
-    async def start(self):
+    async def start(self) -> None:
         """Start both WebSocket servers."""
         self._server = await serve(
             self._extension_handler,
@@ -133,7 +133,7 @@ class BridgeServer:
     # Extension Handler (port 9877)
     # ==========================================
 
-    async def _extension_handler(self, websocket):
+    async def _extension_handler(self, websocket) -> None:
         """Handle a browser extension connection. Supports multiple simultaneous browsers."""
         addr = websocket.remote_address
         logger.info("Extension connecting from %s...", addr)
@@ -193,7 +193,7 @@ class BridgeServer:
             # Note: we can't easily identify which futures belong to this connection
             # without per-connection tracking. Futures will timeout naturally.
 
-    async def _handle_extension_message(self, data: dict):
+    async def _handle_extension_message(self, data: dict) -> None:
         """Process a message from any extension connection."""
         msg_type = data.get('type', '')
 
@@ -220,7 +220,7 @@ class BridgeServer:
     # Control Handler (port 9878)
     # ==========================================
 
-    async def _control_handler(self, websocket):
+    async def _control_handler(self, websocket) -> None:
         """Handle an external control client (MCP server, scripts, etc.)."""
         addr = websocket.remote_address
         logger.info("Control client connected from %s", addr)
@@ -380,7 +380,7 @@ class BridgeServer:
     # Shutdown
     # ==========================================
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Clean shutdown of both servers and all extension connections."""
         for label, ws in list(self._connections.items()):
             try:
