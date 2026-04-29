@@ -92,7 +92,7 @@ Both screenshot functions now:
 ### Fix Applied (v3.2.0) — Eliminated
 Switched to CDP-based screenshots via `chrome.debugger` API. CDP's `Page.captureScreenshot` renders directly from the compositor pipeline — no window focus, no tab activation required. The focus-steal only occurs in the fallback path (when DevTools is open on the target tab).
 
-See `docs/06_screenshot_approaches.md` and `docs/07_benefits_of_cdp_addition.md` for the full technical analysis.
+See `docs/06_screenshot_approaches.md` for the full technical analysis.
 
 ---
 
