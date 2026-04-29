@@ -21,6 +21,50 @@ setInterval(() => {
 }, KEEPALIVE_INTERVAL);
 
 // ==========================================
+// On-Demand Content Script Injection
+// ==========================================
+// Content script is NOT declared in manifest.json.
+// Instead, we inject it lazily on first command to each tab,
+// saving memory and CPU across all untouched tabs/frames.
+
+const _injectedTabs = new Set();
+
+/**
+ * Ensure the content script is injected into a tab before sending it commands.
+ * Injects into all frames (allFrames: true) so frame_id targeting works.
+ * No-ops if already injected into this tab.
+ * 
+ * @param {number} tabId - The numeric Chrome tab ID
+ * @returns {Promise<void>}
+ */
+async function ensureContentScriptInjected(tabId) {
+    if (_injectedTabs.has(tabId)) return;
+
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            files: ['content_script.js'],
+        });
+        _injectedTabs.add(tabId);
+    } catch (e) {
+        // Don't add to set — let the next command retry
+        throw new Error(`Content script injection failed: ${e.message}`);
+    }
+}
+
+// Clean up injection tracking when tabs navigate or close
+chrome.tabs.onRemoved.addListener((tabId) => {
+    _injectedTabs.delete(tabId);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    // When a tab navigates to a new page, the injected script is gone
+    if (changeInfo.status === 'loading') {
+        _injectedTabs.delete(tabId);
+    }
+});
+
+// ==========================================
 // Global Enable/Disable State
 // ==========================================
 
@@ -371,6 +415,12 @@ async function handleBackgroundCommand(msg) {
         // === Script Execution (CSP bypass) ===
         case 'executeScript':
             return await cmdExecuteScript(msg.code, msg._senderTabId || msg.tabId, msg.world);
+        case 'executeScriptAllFrames':
+            return await cmdExecuteScriptAllFrames(msg.code, msg.tabId, msg.world);
+
+        // === Frame Enumeration ===
+        case 'listFrames':
+            return await cmdListFrames(msg.tabId);
 
         // === Window Management ===
         case 'newWindow':
@@ -534,7 +584,8 @@ async function bridgeRouteCommand(msg) {
         'getCookies', 'setCookie', 'deleteCookie', 'listCookieStores',
         'startNetCapture', 'stopNetCapture', 'getNetCapture', 'clearNetCapture',
         'newWindow', 'newIncognitoWindow', 'listWindows', 'closeWindow', 'resizeWindow',
-        'executeScript', 'enableBlock', 'disableBlock',
+        'executeScript', 'executeScriptAllFrames', 'listFrames',
+        'enableBlock', 'disableBlock',
         'waitForUrl',
     ];
 
@@ -552,6 +603,7 @@ async function bridgeRouteCommand(msg) {
 
 /**
  * Forward a command to a content script via chrome.tabs.sendMessage.
+ * Lazily injects the content script on first use per tab.
  */
 async function bridgeForwardToContentScript(msg) {
     try {
@@ -566,10 +618,20 @@ async function bridgeForwardToContentScript(msg) {
             return { success: false, error: `Cannot run commands on browser internal pages (${tab.url.split('/')[2]})` };
         }
 
+        // Ensure content script is injected (no-op if already done for this tab)
+        await ensureContentScriptInjected(targetId);
+
+        // Build sendMessage options — target a specific frame if frameId is provided.
+        // frameId comes from browser_list_frames output; 0 = top-level frame.
+        const sendOpts = {};
+        if (msg.frameId !== undefined && msg.frameId !== null) {
+            sendOpts.frameId = msg.frameId;
+        }
+
         return await new Promise((resolve) => {
-            chrome.tabs.sendMessage(targetId, { ...msg, target: 'content' }, (response) => {
+            chrome.tabs.sendMessage(targetId, { ...msg, target: 'content' }, sendOpts, (response) => {
                 if (chrome.runtime.lastError) {
-                    resolve({ success: false, error: `Content script not ready on this tab. Try refreshing the page. (${chrome.runtime.lastError.message})` });
+                    resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}` });
                 } else {
                     resolve(response || { success: false, error: 'No response from content script' });
                 }
@@ -672,20 +734,39 @@ async function cmdGoForward(tabId) {
  * Wrapper around captureVisibleTab that retries on quota errors.
  * Chrome limits captureVisibleTab to ~2 calls/sec. If we exceed that
  * (e.g., rapid full-page scroll loop) we back off and retry automatically.
+ *
+ * Includes an in-memory mutex so that only one captureVisibleTab call
+ * can be in-flight at a time — prevents parallel MCP tool calls from
+ * saturating the quota simultaneously.
  */
+let _screenshotLock = null; // Promise-based mutex
+
 async function captureWithRetry(windowId, options, maxAttempts = 5) {
-    let delay = 600; // ms — start above the 1-second quota window
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-            return await chrome.tabs.captureVisibleTab(windowId, options);
-        } catch (e) {
-            if (e.message && e.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') && attempt < maxAttempts) {
-                await new Promise(r => setTimeout(r, delay));
-                delay = Math.min(delay * 1.5, 3000); // cap at 3s
-                continue;
+    // Wait for any in-flight screenshot to complete
+    while (_screenshotLock) {
+        await _screenshotLock;
+    }
+
+    let resolveLock;
+    _screenshotLock = new Promise(r => { resolveLock = r; });
+
+    try {
+        let delay = 600; // ms — start above the 1-second quota window
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await chrome.tabs.captureVisibleTab(windowId, options);
+            } catch (e) {
+                if (e.message && e.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') && attempt < maxAttempts) {
+                    await new Promise(r => setTimeout(r, delay));
+                    delay = Math.min(delay * 1.5, 3000); // cap at 3s
+                    continue;
+                }
+                throw e;
             }
-            throw e;
         }
+    } finally {
+        _screenshotLock = null;
+        resolveLock();
     }
 }
 
@@ -697,6 +778,9 @@ async function cmdCaptureScreenshot(tabId) {
         const [prevWindow] = await chrome.windows.getAll({ populate: false })
             .then(ws => ws.filter(w => w.focused));
         const prevWindowId = prevWindow?.id;
+
+        // Get the target tab so we know which window it's in
+        const tab = await chrome.tabs.get(tabId);
 
         // Remember this window's state BEFORE we force it to the front
         const targetWindow = await chrome.windows.get(tab.windowId);
@@ -1161,6 +1245,201 @@ async function cmdExecuteScriptViaTag(code, tabId) {
         return { success: false, error: 'No result from script tag execution' };
     } catch (e) {
         return { success: false, error: `executeScript (tag fallback) failed: ${e.message}` };
+    }
+}
+
+// ==========================================
+// Frame Enumeration (cross-frame support)
+// ==========================================
+
+/**
+ * List all frames in a tab — discovers <frame>, <iframe>, and frameset content.
+ * Returns { frameIndex, url, title, hasBody } for each frame.
+ */
+async function cmdListFrames(tabId) {
+    try {
+        if (!tabId) return { success: false, error: 'tabId required' };
+        const results = await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: 'MAIN',
+            func: () => ({
+                url: location.href,
+                title: document.title || '',
+                hasBody: !!document.body,
+                tagName: document.documentElement?.tagName || '',
+                isFrameset: !!document.querySelector('frameset'),
+                elementCount: document.querySelectorAll('*').length,
+            }),
+        });
+        if (!results || results.length === 0) {
+            return { success: false, error: 'No frames found (page may not be loaded)' };
+        }
+        return {
+            success: true,
+            data: {
+                frameCount: results.length,
+                frames: results.map((r, i) => ({
+                    frameIndex: i,
+                    frameId: r.frameId ?? null,
+                    ...r.result,
+                })),
+            },
+        };
+    } catch (e) {
+        return { success: false, error: `listFrames failed: ${e.message}` };
+    }
+}
+
+/**
+ * Execute JavaScript in ALL frames of a tab.
+ * Returns results from every frame — useful for finding content in
+ * framesets, cross-origin iframes, or embedded widgets.
+ */
+async function cmdExecuteScriptAllFrames(code, tabId, world) {
+    try {
+        if (!tabId) return { success: false, error: 'tabId required' };
+        const targetWorld = (world === 'ISOLATED') ? 'ISOLATED' : 'MAIN';
+
+        const results = await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: targetWorld,
+            func: (codeStr) => {
+                try {
+                    let result;
+                    try {
+                        result = (0, eval)(codeStr);
+                    } catch (evalErr) {
+                        if (evalErr instanceof SyntaxError && codeStr.includes('return')) {
+                            const fn = new Function(codeStr);
+                            result = fn();
+                        } else {
+                            throw evalErr;
+                        }
+                    }
+                    if (result instanceof HTMLElement) {
+                        return {
+                            tagName: result.tagName,
+                            id: result.id,
+                            className: result.className,
+                            innerText: (result.innerText || '').substring(0, 1000),
+                        };
+                    }
+                    if (result === undefined) return null;
+                    if (typeof result === 'function') return '[function]';
+                    return result;
+                } catch (e) {
+                    return { __error: true, message: e.message };
+                }
+            },
+            args: [code],
+        });
+
+        if (!results || results.length === 0) {
+            return { success: false, error: 'No results from any frame' };
+        }
+
+        // Check if ANY frame hit Trusted Types — if so, retry ALL frames via
+        // script tag injection (ISOLATED world → <script> tag → MAIN world).
+        // This matches the fallback in cmdExecuteScript → cmdExecuteScriptViaTag.
+        const hasTrustedTypeError = results.some(r =>
+            r.result && r.result.__error &&
+            r.result.message && (r.result.message.includes('Trusted Type') ||
+                                  r.result.message.includes('unsafe-eval'))
+        );
+
+        if (hasTrustedTypeError && targetWorld === 'MAIN') {
+            return await cmdExecuteScriptAllFramesViaTag(code, tabId);
+        }
+
+        return {
+            success: true,
+            data: {
+                frameCount: results.length,
+                results: results.map((r, i) => ({
+                    frameIndex: i,
+                    frameId: r.frameId ?? null,
+                    result: r.result,
+                })),
+            },
+        };
+    } catch (e) {
+        return { success: false, error: `executeScriptAllFrames failed: ${e.message}` };
+    }
+}
+
+/**
+ * Fallback for executeScriptAllFrames on pages with Trusted Types (e.g., Gmail).
+ * Injects a <script> tag from the ISOLATED world into each frame, which runs
+ * in the MAIN world automatically — bypassing Trusted Types restrictions.
+ */
+async function cmdExecuteScriptAllFramesViaTag(code, tabId) {
+    try {
+        const results = await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: 'ISOLATED',
+            func: (codeStr) => {
+                return new Promise((resolve) => {
+                    const resultId = '__stealth_result_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+                    const wrappedCode = `
+                        try {
+                            const __r = (function(){ return ${codeStr} })();
+                            const __el = document.getElementById('${resultId}');
+                            if (__el) __el.dataset.result = JSON.stringify(
+                                __r === undefined ? null :
+                                __r instanceof HTMLElement ? {tagName:__r.tagName, id:__r.id, className:__r.className, innerText:(__r.innerText||'').substring(0,1000)} :
+                                typeof __r === 'function' ? '[function]' : __r
+                            );
+                        } catch(e) {
+                            const __el = document.getElementById('${resultId}');
+                            if (__el) __el.dataset.result = JSON.stringify({__error:true, message:e.message});
+                        }
+                    `;
+
+                    const div = document.createElement('div');
+                    div.id = resultId;
+                    div.style.display = 'none';
+                    document.documentElement.appendChild(div);
+
+                    const script = document.createElement('script');
+                    script.textContent = wrappedCode;
+                    document.documentElement.appendChild(script);
+                    script.remove();
+
+                    const resultStr = div.dataset.result;
+                    div.remove();
+
+                    if (resultStr) {
+                        try {
+                            const parsed = JSON.parse(resultStr);
+                            resolve(parsed);
+                        } catch (e) {
+                            resolve(resultStr);
+                        }
+                    } else {
+                        resolve(null);
+                    }
+                });
+            },
+            args: [code],
+        });
+
+        if (!results || results.length === 0) {
+            return { success: false, error: 'No results from any frame (tag fallback)' };
+        }
+
+        return {
+            success: true,
+            data: {
+                frameCount: results.length,
+                results: results.map((r, i) => ({
+                    frameIndex: i,
+                    frameId: r.frameId ?? null,
+                    result: r.result,
+                })),
+            },
+        };
+    } catch (e) {
+        return { success: false, error: `executeScriptAllFrames (tag fallback) failed: ${e.message}` };
     }
 }
 

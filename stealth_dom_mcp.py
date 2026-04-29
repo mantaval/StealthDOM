@@ -164,14 +164,19 @@ Each tab has a 'virtualId' like 'brave:12345' — ALWAYS use virtualId for tab_i
 IMPORTANT: All tab-scoped tools require tab_id. ALWAYS call browser_list_tabs()
 first. Never guess tab IDs.
 
-TOOLS (44 total):
+CROSS-FRAME SUPPORT: Most DOM tools accept an optional frame_id parameter.
+Use browser_list_frames(tab_id) to discover all frames (iframes, framesets).
+Then pass frame_id to any DOM tool to target elements inside that frame.
+Workflow: browser_list_frames() → find target frame → browser_query(tab_id, selector, frame_id=N)
 
-DOM Reading (9):
+TOOLS (46 total):
+
+DOM Reading (9) — all accept optional frame_id:
   browser_query, browser_query_all, browser_get_text, browser_get_html,
   browser_get_attribute, browser_get_bounding_rect, browser_wait_for,
   browser_get_page_text, browser_get_page_html
 
-DOM Interaction (11):
+DOM Interaction (11) — all accept optional frame_id:
   browser_click, browser_type, browser_fill, browser_press, browser_key_combo,
   browser_check, browser_uncheck, browser_select, browser_scroll_into_view,
   browser_hover, browser_drag_and_drop
@@ -205,6 +210,12 @@ JavaScript (1): browser_evaluate (MAIN or ISOLATED world)
 File Upload (1): browser_upload_file
 Proxy Fetch (1): browser_proxy_fetch (real browser TLS fingerprint)
 Connections (1): browser_list_connections
+
+Frame Support (2):
+  browser_list_frames, browser_evaluate_all_frames
+  Note: Use browser_list_frames to discover frame IDs, then pass frame_id to any
+  DOM reading/interaction tool. For JS execution across all frames simultaneously,
+  use browser_evaluate_all_frames.
 """)
 
 
@@ -225,6 +236,7 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 - Port 9878: MCP server / control clients connect
 - Tab IDs are virtualised as "label:tabId" (e.g. "brave:12345") for multi-browser routing
 - browser_list_tabs() aggregates ALL tabs from ALL connected browsers in one flat list
+- Content scripts are injected ON-DEMAND via chrome.scripting.executeScript (allFrames: true) when the first command targets a tab — NOT declared in manifest.json (saves memory on untouched tabs)
 
 ## Why StealthDOM over Playwright?
 
@@ -235,31 +247,41 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 | User sessions | Must re-authenticate | Uses existing logged-in sessions |
 | TLS fingerprint | Synthetic (detectable) | Real browser (identical to human) |
 
-## Available Tools (44)
+## Cross-Frame Support
 
-### DOM Reading (9)
-- `browser_query(tab_id, selector)` — Query single element
-- `browser_query_all(tab_id, selector, limit=0)` — Query multiple elements
-- `browser_get_text(tab_id, selector)` — Inner text
-- `browser_get_html(tab_id, selector, max_length=0)` — Outer HTML
-- `browser_get_attribute(tab_id, selector, attribute)` — Element attribute
-- `browser_get_bounding_rect(tab_id, selector)` — Position and size
-- `browser_wait_for(tab_id, selector, timeout=10000)` — Wait for element
-- `browser_get_page_text(tab_id)` — Full page text (up to 50KB)
-- `browser_get_page_html(tab_id, max_length=0)` — Full page HTML
+All DOM reading and interaction tools accept an optional `frame_id` parameter.
+This enables targeting elements inside iframes and framesets (Gmail, OAuth dialogs, payment widgets).
 
-### DOM Interaction (11)
-- `browser_click(tab_id, selector)` — Click (auto-scrolls into view)
-- `browser_type(tab_id, selector, text)` — Type/append text
-- `browser_fill(tab_id, selector, value)` — Clear and fill
-- `browser_press(tab_id, key)` — Single key press
-- `browser_key_combo(tab_id, keys)` — Key combo (comma-separated: 'Control,Shift,d')
-- `browser_check(tab_id, selector)` — Check checkbox
-- `browser_uncheck(tab_id, selector)` — Uncheck checkbox
-- `browser_select(tab_id, selector, value)` — Select dropdown option
-- `browser_scroll_into_view(tab_id, selector)` — Scroll element into view
-- `browser_hover(tab_id, selector)` — Hover (mouseenter/mouseover/mousemove)
-- `browser_drag_and_drop(tab_id, source_selector, target_selector)` — HTML5 drag-drop
+**Workflow:**
+1. `browser_list_frames(tab_id)` → discover all frames (returns frameId, URL, elementCount per frame)
+2. Pass `frame_id=N` to any DOM tool → targets that specific frame
+3. Omit `frame_id` → targets top-level frame (default, backward compatible)
+
+## Available Tools (46)
+
+### DOM Reading (9) — all accept optional frame_id
+- `browser_query(tab_id, selector, frame_id=None)` — Query single element
+- `browser_query_all(tab_id, selector, limit=0, frame_id=None)` — Query multiple elements
+- `browser_get_text(tab_id, selector, frame_id=None)` — Inner text
+- `browser_get_html(tab_id, selector, max_length=0, frame_id=None)` — Outer HTML
+- `browser_get_attribute(tab_id, selector, attribute, frame_id=None)` — Element attribute
+- `browser_get_bounding_rect(tab_id, selector, frame_id=None)` — Position and size
+- `browser_wait_for(tab_id, selector, timeout=10000, frame_id=None)` — Wait for element
+- `browser_get_page_text(tab_id, max_length=0, frame_id=None)` — Full page text (0 = no limit)
+- `browser_get_page_html(tab_id, max_length=0, frame_id=None)` — Full page HTML
+
+### DOM Interaction (11) — all accept optional frame_id
+- `browser_click(tab_id, selector, frame_id=None)` — Click (auto-scrolls into view)
+- `browser_type(tab_id, selector, text, frame_id=None)` — Type/append text
+- `browser_fill(tab_id, selector, value, frame_id=None)` — Clear and fill
+- `browser_press(tab_id, key, frame_id=None)` — Single key press
+- `browser_key_combo(tab_id, keys, frame_id=None)` — Key combo (comma-separated: 'Control,Shift,d')
+- `browser_check(tab_id, selector, frame_id=None)` — Check checkbox
+- `browser_uncheck(tab_id, selector, frame_id=None)` — Uncheck checkbox
+- `browser_select(tab_id, selector, value, frame_id=None)` — Select dropdown option
+- `browser_scroll_into_view(tab_id, selector, frame_id=None)` — Scroll element into view
+- `browser_hover(tab_id, selector, frame_id=None)` — Hover (mouseenter/mouseover/mousemove)
+- `browser_drag_and_drop(tab_id, source_selector, target_selector, frame_id=None)` — HTML5 drag-drop
 
 ### Navigation (5)
 - `browser_navigate(tab_id, url)` — Navigate to URL
@@ -311,10 +333,15 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 ### Connections (1)
 - `browser_list_connections()` — Show connected browsers and their labels
 
+### Frame Support (2)
+- `browser_list_frames(tab_id)` — List all frames in a tab (frameId, URL, elementCount, hasBody per frame)
+- `browser_evaluate_all_frames(tab_id, code, world='MAIN')` — Execute JS in ALL frames, returns per-frame results
+
 ## Tips
 - To focus/blur an element: use browser_evaluate with 'document.querySelector("#id").focus()'
 - To double-click: use browser_evaluate with el.dispatchEvent(new MouseEvent('dblclick', {bubbles:true}))
 - For JS frameworks (React/Vue): browser_fill uses native value setter to trigger onChange
+- For cross-frame access: browser_list_frames → get frameId → pass frame_id to any DOM tool
 """
 
 
@@ -323,14 +350,17 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 # ==========================================
 
 @mcp.tool()
-async def browser_query(tab_id: int, selector: str) -> str:
+async def browser_query(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Query a single DOM element by CSS selector. Returns element details (tag, id, class, text, visibility).
     
     Args:
         tab_id: ID of the tab to query (get from browser_list_tabs)
         selector: CSS selector (e.g., '#my-id', '.my-class', 'div.container > p')
+        frame_id: Optional frame ID to target (get from browser_list_frames). Omit for top-level frame.
     """
-    result = await send_command("querySelector", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("querySelector", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error', 'Unknown error')}"
     data = result.get("data")
@@ -340,88 +370,106 @@ async def browser_query(tab_id: int, selector: str) -> str:
 
 
 @mcp.tool()
-async def browser_query_all(tab_id: int, selector: str, limit: int = 0) -> str:
+async def browser_query_all(tab_id: int, selector: str, limit: int = 0, frame_id: int = None) -> str:
     """Query all DOM elements matching a CSS selector. Returns list of element details.
     
     Args:
         tab_id: ID of the tab to query (get from browser_list_tabs)
         selector: CSS selector
         limit: Maximum number of elements to return (default 0 = all)
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("querySelectorAll", tabId=tab_id, selector=selector, limit=limit)
+    kwargs = dict(tabId=tab_id, selector=selector, limit=limit)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("querySelectorAll", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return json.dumps(result.get("data"), indent=2)
 
 
 @mcp.tool()
-async def browser_get_text(tab_id: int, selector: str) -> str:
+async def browser_get_text(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Get the inner text content of a DOM element.
     
     Args:
         tab_id: ID of the tab to query (get from browser_list_tabs)
         selector: CSS selector
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("getInnerText", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("getInnerText", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return result.get("data", {}).get("text", "")
 
 
 @mcp.tool()
-async def browser_get_html(tab_id: int, selector: str, max_length: int = 0) -> str:
+async def browser_get_html(tab_id: int, selector: str, max_length: int = 0, frame_id: int = None) -> str:
     """Get the outer HTML of a DOM element.
     
     Args:
         tab_id: ID of the tab to query (get from browser_list_tabs)
         selector: CSS selector
         max_length: Maximum characters to return (default 0 = no limit)
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("getOuterHTML", tabId=tab_id, selector=selector, maxLength=max_length)
+    kwargs = dict(tabId=tab_id, selector=selector, maxLength=max_length)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("getOuterHTML", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return result.get("data") or "Element not found"
 
 
 @mcp.tool()
-async def browser_get_attribute(tab_id: int, selector: str, attribute: str) -> str:
+async def browser_get_attribute(tab_id: int, selector: str, attribute: str, frame_id: int = None) -> str:
     """Get an HTML attribute value from a DOM element.
     
     Args:
         tab_id: ID of the tab to query (get from browser_list_tabs)
         selector: CSS selector
         attribute: Attribute name (e.g., 'href', 'src', 'data-id')
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("getAttribute", tabId=tab_id, selector=selector, attribute=attribute)
+    kwargs = dict(tabId=tab_id, selector=selector, attribute=attribute)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("getAttribute", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return str(result.get("data"))
 
 
 @mcp.tool()
-async def browser_wait_for(tab_id: int, selector: str, timeout: int = 10000) -> str:
+async def browser_wait_for(tab_id: int, selector: str, timeout: int = 10000, frame_id: int = None) -> str:
     """Wait for a DOM element to appear. Polls every 200ms until found or timeout.
     
     Args:
         tab_id: ID of the tab to watch (get from browser_list_tabs)
         selector: CSS selector to wait for
         timeout: Maximum wait time in milliseconds (default 10000)
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("waitForSelector", tabId=tab_id, selector=selector, timeout=timeout, _timeout=timeout/1000 + 5)
+    kwargs = dict(tabId=tab_id, selector=selector, timeout=timeout)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("waitForSelector", _timeout=timeout/1000 + 5, **kwargs)
     if not result.get("success"):
         return f"Timeout: {result.get('error')}"
     return json.dumps(result.get("data"), indent=2)
 
 
 @mcp.tool()
-async def browser_get_bounding_rect(tab_id: int, selector: str) -> str:
+async def browser_get_bounding_rect(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Get the bounding rectangle (position and size) of a DOM element.
     
     Args:
         tab_id: ID of the tab to query (get from browser_list_tabs)
         selector: CSS selector
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("getBoundingRect", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("getBoundingRect", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return json.dumps(result.get("data"), indent=2)
@@ -432,152 +480,182 @@ async def browser_get_bounding_rect(tab_id: int, selector: str) -> str:
 # ==========================================
 
 @mcp.tool()
-async def browser_click(tab_id: int, selector: str) -> str:
+async def browser_click(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Click a DOM element. Element is scrolled into view first.
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of element to click
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("click", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("click", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Clicked successfully"
 
 
 @mcp.tool()
-async def browser_type(tab_id: int, selector: str, text: str) -> str:
+async def browser_type(tab_id: int, selector: str, text: str, frame_id: int = None) -> str:
     """Type text into a DOM element (appends to existing content). Works with contenteditable divs.
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of element to type into
         text: Text to type
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("type", tabId=tab_id, selector=selector, text=text)
+    kwargs = dict(tabId=tab_id, selector=selector, text=text)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("type", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Typed successfully"
 
 
 @mcp.tool()
-async def browser_fill(tab_id: int, selector: str, value: str) -> str:
+async def browser_fill(tab_id: int, selector: str, value: str, frame_id: int = None) -> str:
     """Clear and fill a form input or contenteditable element with new text.
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of input/textarea/contenteditable
         value: Value to fill
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("fill", tabId=tab_id, selector=selector, value=value)
+    kwargs = dict(tabId=tab_id, selector=selector, value=value)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("fill", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Filled successfully"
 
 
 @mcp.tool()
-async def browser_press(tab_id: int, key: str) -> str:
+async def browser_press(tab_id: int, key: str, frame_id: int = None) -> str:
     """Press a single keyboard key.
     
     Args:
         tab_id: ID of the tab to send the key to (get from browser_list_tabs)
         key: Key to press (e.g., 'Enter', 'Tab', 'Escape', 'a')
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("keyPress", tabId=tab_id, key=key)
+    kwargs = dict(tabId=tab_id, key=key)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("keyPress", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return f"Pressed {key}"
 
 
 @mcp.tool()
-async def browser_key_combo(tab_id: int, keys: str) -> str:
+async def browser_key_combo(tab_id: int, keys: str, frame_id: int = None) -> str:
     """Press a keyboard shortcut (key combination).
     
     Args:
         tab_id: ID of the tab to send the keys to (get from browser_list_tabs)
         keys: Comma-separated keys (e.g., 'Control,Shift,d' or 'Alt,Tab')
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
     key_list = [k.strip() for k in keys.split(",")]
-    result = await send_command("keyCombo", tabId=tab_id, keys=key_list)
+    kwargs = dict(tabId=tab_id, keys=key_list)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("keyCombo", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return f"Pressed {'+'.join(key_list)}"
 
 
 @mcp.tool()
-async def browser_scroll_into_view(tab_id: int, selector: str) -> str:
+async def browser_scroll_into_view(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Scroll an element smoothly into view (centered in viewport).
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of element to scroll to
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("scrollIntoView", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("scrollIntoView", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Scrolled into view"
 
 
 @mcp.tool()
-async def browser_select(tab_id: int, selector: str, value: str) -> str:
+async def browser_select(tab_id: int, selector: str, value: str, frame_id: int = None) -> str:
     """Select an option in a dropdown/select element.
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of the select element
         value: Value of the option to select
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("selectOption", tabId=tab_id, selector=selector, value=value)
+    kwargs = dict(tabId=tab_id, selector=selector, value=value)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("selectOption", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Option selected"
 
 
 @mcp.tool()
-async def browser_check(tab_id: int, selector: str) -> str:
+async def browser_check(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Check a checkbox (no-op if already checked).
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of the checkbox
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("check", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("check", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Checked"
 
 
 @mcp.tool()
-async def browser_uncheck(tab_id: int, selector: str) -> str:
+async def browser_uncheck(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Uncheck a checkbox (no-op if already unchecked).
     
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of the checkbox
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("uncheck", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("uncheck", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Unchecked"
 
 
 @mcp.tool()
-async def browser_hover(tab_id: int, selector: str) -> str:
+async def browser_hover(tab_id: int, selector: str, frame_id: int = None) -> str:
     """Hover over a DOM element (triggers mouseenter, mouseover, mousemove).
     Useful for revealing dropdown menus, tooltips, and hover-activated UI.
 
     Args:
         tab_id: ID of the tab containing the element (get from browser_list_tabs)
         selector: CSS selector of element to hover over
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("hover", tabId=tab_id, selector=selector)
+    kwargs = dict(tabId=tab_id, selector=selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("hover", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Hovered"
 
 
 @mcp.tool()
-async def browser_drag_and_drop(tab_id: int, source_selector: str, target_selector: str) -> str:
+async def browser_drag_and_drop(tab_id: int, source_selector: str, target_selector: str, frame_id: int = None) -> str:
     """Drag an element and drop it onto another element using the HTML5 Drag API.
     Works for drag-enabled libraries (Kanban boards, sortable lists, file drop zones).
 
@@ -585,10 +663,11 @@ async def browser_drag_and_drop(tab_id: int, source_selector: str, target_select
         tab_id: ID of the tab (get from browser_list_tabs)
         source_selector: CSS selector of the element to drag
         target_selector: CSS selector of the drop target
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("dragAndDrop", tabId=tab_id,
-                                sourceSelector=source_selector,
-                                targetSelector=target_selector)
+    kwargs = dict(tabId=tab_id, sourceSelector=source_selector, targetSelector=target_selector)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("dragAndDrop", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Drag and drop completed"
@@ -662,15 +741,18 @@ async def browser_wait_for_url(tab_id: int, pattern: str, timeout: int = 10000) 
 
 
 @mcp.tool()
-async def browser_scroll_to(tab_id: int, x: int = 0, y: int = 0) -> str:
+async def browser_scroll_to(tab_id: int, x: int = 0, y: int = 0, frame_id: int = None) -> str:
     """Scroll the page to specific coordinates.
 
     Args:
         tab_id: ID of the tab (get from browser_list_tabs)
         x: Horizontal scroll position in pixels (default 0)
         y: Vertical scroll position in pixels (default 0)
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("scrollTo", tabId=tab_id, x=x, y=y)
+    kwargs = dict(tabId=tab_id, x=x, y=y)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("scrollTo", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return f"Scrolled to ({x}, {y})"
@@ -716,27 +798,34 @@ async def browser_get_title(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_get_page_text(tab_id: int) -> str:
-    """Get the full visible text content of the current page (up to 50KB).
+async def browser_get_page_text(tab_id: int, max_length: int = 0, frame_id: int = None) -> str:
+    """Get the full visible text content of the current page.
     
     Args:
         tab_id: ID of the tab to get text from (get from browser_list_tabs)
+        max_length: Maximum characters to return (default 0 = no limit)
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("getPageText", tabId=tab_id, maxLength=50000)
+    kwargs = dict(tabId=tab_id, maxLength=max_length)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("getPageText", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return result.get("data", "")
 
 
 @mcp.tool()
-async def browser_get_page_html(tab_id: int, max_length: int = 0) -> str:
+async def browser_get_page_html(tab_id: int, max_length: int = 0, frame_id: int = None) -> str:
     """Get the full HTML of the current page.
     
     Args:
         tab_id: ID of the tab to get HTML from (get from browser_list_tabs)
         max_length: Maximum characters to return (default 0 = no limit)
+        frame_id: Optional frame ID to target (get from browser_list_frames)
     """
-    result = await send_command("getPageHTML", tabId=tab_id, maxLength=max_length)
+    kwargs = dict(tabId=tab_id, maxLength=max_length)
+    if frame_id is not None: kwargs['frameId'] = frame_id
+    result = await send_command("getPageHTML", **kwargs)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return result.get("data", "")
@@ -812,6 +901,38 @@ async def browser_evaluate(tab_id: int, code: str, world: str = "MAIN") -> str:
         return f"Error: {result.get('error')}"
     data = result.get("data")
     return json.dumps(data) if isinstance(data, (dict, list)) else str(data)
+
+
+@mcp.tool()
+async def browser_list_frames(tab_id: int) -> str:
+    """List all frames (iframes, framesets) in a tab. Returns URL, title, and body
+    presence for each frame. Essential for pages where standard tools return null
+    because the UI lives inside a <frame> or <iframe> (e.g., Gmail compose, OAuth dialogs).
+
+    Args:
+        tab_id: ID of the tab to enumerate frames in (get from browser_list_tabs)
+    """
+    result = await send_command("listFrames", tabId=tab_id)
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+@mcp.tool()
+async def browser_evaluate_all_frames(tab_id: int, code: str, world: str = "MAIN") -> str:
+    """Execute JavaScript in ALL frames of a tab and return per-frame results.
+    Use when the target content lives inside a <frame> or <iframe> and standard
+    browser_evaluate returns null. Each result includes frameIndex and frameId.
+
+    Args:
+        tab_id: ID of the tab to execute JS in (get from browser_list_tabs)
+        code: JavaScript code to evaluate in every frame
+        world: "MAIN" or "ISOLATED"
+    """
+    result = await send_command("executeScriptAllFrames", tabId=tab_id, code=code, world=world)
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
 
 
 # ==========================================

@@ -334,7 +334,7 @@ Commands are JSON objects with an `action` field and optional parameters. See [0
 | `bridge_server.py` | WebSocket relay server (ports 9877 + 9878) |
 | `stealth_dom_mcp.py` | MCP server wrapping all commands as AI agent tools |
 | `extension/` | Browser extension (background.js, content_script.js, manifest.json) |
-| `tests/test_stealth_dom.py` | Integration test suite (19 tests) |
+| `tests/test_stealth_dom.py` | Integration test suite (39 assertions across 19 test functions) |
 | `start_bridge.bat` | One-click bridge startup with auto-restart (Windows) |
 | `windows_startup_install.bat` | Install bridge as Windows auto-start task (right-click → Run as admin) |
 | `windows_startup_uninstall.bat` | Remove the auto-start task (right-click → Run as admin) |

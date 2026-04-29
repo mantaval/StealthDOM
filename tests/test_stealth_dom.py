@@ -493,6 +493,257 @@ async def test_proxy_fetch(results: TestResults):
         await ws.close()
 
 
+async def test_list_frames(results: TestResults):
+    """Test listFrames returns frame inventory for a tab."""
+    print("\n[Test: List Frames (v3.0.2)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("listFrames", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        r = await bridge_send(ws, "listFrames", tabId=tab_id)
+        assert r.get("success"), f"listFrames failed: {r.get('error')}"
+        data = r["data"]
+
+        assert "frameCount" in data, "Missing frameCount field"
+        assert "frames" in data, "Missing frames field"
+        assert isinstance(data["frames"], list), "frames should be a list"
+        assert data["frameCount"] >= 1, "Should have at least the top-level frame"
+        results.ok(f"listFrames returned {data['frameCount']} frame(s)")
+
+        # Validate frame structure
+        frame0 = data["frames"][0]
+        required = ["frameIndex", "url", "title", "hasBody"]
+        for field in required:
+            assert field in frame0, f"Frame missing field: {field}"
+        results.ok(f"Frame structure OK: url={frame0['url'][:50]}, hasBody={frame0['hasBody']}")
+
+        # Validate optional enrichment fields
+        if "elementCount" in frame0:
+            assert isinstance(frame0["elementCount"], int), "elementCount should be int"
+            results.ok(f"Frame enrichment: elementCount={frame0['elementCount']}")
+        if "isFrameset" in frame0:
+            results.ok(f"Frame enrichment: isFrameset={frame0['isFrameset']}")
+
+    except AssertionError as e:
+        results.fail("listFrames", str(e))
+    except Exception as e:
+        results.fail("listFrames", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_list_frames_missing_tabid(results: TestResults):
+    """Test that listFrames rejects missing tabId."""
+    print("\n[Test: listFrames Missing tabId (v3.0.2)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        r = await bridge_send(ws, "listFrames")
+        if not r.get("success") and "tabId required" in r.get("error", ""):
+            results.ok("listFrames correctly rejects missing tabId")
+        else:
+            results.fail("listFrames missing tabId", f"Expected rejection, got: {r}")
+    except Exception as e:
+        results.fail("listFrames missing tabId", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_execute_script_all_frames(results: TestResults):
+    """Test executeScriptAllFrames runs code in all frames and returns per-frame results."""
+    print("\n[Test: Execute Script All Frames (v3.0.2)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("executeScriptAllFrames", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        r = await bridge_send(ws, "executeScriptAllFrames", tabId=tab_id,
+                              code="document.title")
+        assert r.get("success"), f"executeScriptAllFrames failed: {r.get('error')}"
+        data = r["data"]
+
+        assert "frameCount" in data, "Missing frameCount field"
+        assert "results" in data, "Missing results field"
+        assert isinstance(data["results"], list), "results should be a list"
+        assert data["frameCount"] >= 1, "Should have at least 1 frame result"
+        results.ok(f"executeScriptAllFrames returned {data['frameCount']} result(s)")
+
+        # Validate result structure
+        frame_result = data["results"][0]
+        assert "frameIndex" in frame_result, "Missing frameIndex in result"
+        assert "result" in frame_result, "Missing result field in frame result"
+        results.ok(f"Frame 0 result: title='{frame_result['result']}'")
+
+        # Test with a more complex expression to ensure eval works
+        # On sites with Trusted Types (Gmail), this should trigger the
+        # script tag fallback automatically and still return valid results
+        r2 = await bridge_send(ws, "executeScriptAllFrames", tabId=tab_id,
+                               code="({url: location.href, elementCount: document.querySelectorAll('*').length})")
+        if r2.get("success"):
+            fr = r2["data"]["results"][0]["result"]
+            if isinstance(fr, dict) and fr.get("__error"):
+                results.fail("executeScriptAllFrames complex eval",
+                             f"Got error even with fallback: {fr.get('message')}")
+            elif isinstance(fr, dict) and "url" in fr:
+                assert "elementCount" in fr, "Complex eval should return elementCount"
+                results.ok(f"Complex eval OK: url={fr['url'][:50]}, elements={fr['elementCount']}")
+            else:
+                # Some frames may return null (e.g., no body) — that's OK
+                results.ok(f"Complex eval returned: {str(fr)[:80]}")
+        else:
+            results.fail("executeScriptAllFrames complex eval", r2.get("error"))
+
+    except AssertionError as e:
+        results.fail("executeScriptAllFrames", str(e))
+    except Exception as e:
+        results.fail("executeScriptAllFrames", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_screenshot_mutex(results: TestResults):
+    """Test that parallel screenshot calls don't crash with quota errors (mutex test)."""
+    print("\n[Test: Screenshot Mutex (v3.0.2)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        r = await bridge_send(ws, "listTabs")
+        tabs = r["data"]
+        tab = None
+        for t in tabs:
+            if not t["url"].startswith(("chrome://", "brave://", "edge://", "about:")):
+                tab = t
+                break
+
+        if not tab:
+            results.fail("Screenshot mutex", "No suitable tab")
+            return
+
+        tab_id = tab.get("virtualId") or tab["id"]
+
+        # Fire 3 screenshots in rapid parallel — without the mutex, this would
+        # trigger MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND on at least one
+        async def take_screenshot(label):
+            conn = await websockets.connect(BRIDGE_URL)
+            try:
+                return label, await bridge_send(conn, "captureScreenshot",
+                                                tabId=tab_id, _timeout=30)
+            finally:
+                await conn.close()
+
+        tasks = [
+            take_screenshot("A"),
+            take_screenshot("B"),
+            take_screenshot("C"),
+        ]
+
+        results_list = await asyncio.gather(*tasks, return_exceptions=True)
+
+        succeeded = 0
+        for item in results_list:
+            if isinstance(item, Exception):
+                results.fail(f"Screenshot mutex (exception)", str(item))
+                continue
+            label, resp = item
+            if resp.get("success"):
+                succeeded += 1
+            else:
+                err = resp.get("error", "")
+                if "MAX_CAPTURE" in err:
+                    results.fail(f"Screenshot mutex ({label})",
+                                 "Quota error — mutex not working!")
+                else:
+                    results.fail(f"Screenshot mutex ({label})", err)
+
+        if succeeded == 3:
+            results.ok("All 3 parallel screenshots succeeded (mutex serialized them)")
+        elif succeeded > 0:
+            results.ok(f"{succeeded}/3 parallel screenshots succeeded (partial — may be timing)")
+
+    except Exception as e:
+        results.fail("Screenshot mutex", str(e))
+    finally:
+        await ws.close()
+
+
+async def test_cross_frame_dom(results: TestResults):
+    """Test that DOM commands can target specific frames via frameId."""
+    print("\n[Test: Cross-Frame DOM Access (v3.0.2)]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab = await find_ready_tab(ws)
+        if not tab:
+            results.fail("Cross-frame DOM", "No tab with content script ready")
+            return
+        tab_id = tab.get("_use_id") or tab["id"]
+
+        # Step 1: List frames to find a child frame
+        r = await bridge_send(ws, "listFrames", tabId=tab_id)
+        if not r.get("success"):
+            results.fail("Cross-frame DOM", f"listFrames failed: {r.get('error')}")
+            return
+
+        frames = r["data"]["frames"]
+        if len(frames) < 2:
+            results.ok("Only 1 frame on this page — skip cross-frame test (need a page with iframes)")
+            return
+
+        results.ok(f"Found {len(frames)} frames to test")
+
+        # Step 2: Query the top-level frame (frameId=0) — should always work
+        r = await bridge_send(ws, "querySelector", tabId=tab_id, selector="body", frameId=0)
+        if r.get("success"):
+            results.ok("querySelector in top-level frame (frameId=0) succeeded")
+        else:
+            results.fail("querySelector frameId=0", r.get("error"))
+
+        # Step 3: Query a child frame using its frameId
+        child = frames[1]  # First child frame
+        child_fid = child["frameId"]
+        r = await bridge_send(ws, "querySelector", tabId=tab_id, selector="body", frameId=child_fid)
+        if r.get("success"):
+            results.ok(f"querySelector in child frame (frameId={child_fid}) succeeded")
+        else:
+            err = r.get("error", "")
+            # Cross-origin iframes may reject content script injection — expected
+            if any(x in err for x in ["does not exist", "not ready", "injection failed", "Cannot access"]):
+                results.ok(f"Child frame {child_fid} not reachable (cross-origin — expected)")
+            else:
+                results.fail(f"querySelector frameId={child_fid}", err)
+
+        # Step 4: Get page text from a child frame with enough elements
+        rich_frame = None
+        for f in frames[1:]:
+            if f.get("elementCount", 0) > 10 and f.get("hasBody"):
+                rich_frame = f
+                break
+
+        if rich_frame:
+            r = await bridge_send(ws, "getPageText", tabId=tab_id, frameId=rich_frame["frameId"], maxLength=500)
+            if r.get("success"):
+                text = r.get("data", "")
+                results.ok(f"getPageText in frame {rich_frame['frameId']}: {len(text)} chars")
+            else:
+                err = r.get("error", "")
+                # Cross-origin frames may not have content script
+                if any(x in err for x in ["does not exist", "not ready", "injection failed"]):
+                    results.ok(f"Frame {rich_frame['frameId']} not reachable (cross-origin — expected)")
+                else:
+                    results.fail(f"getPageText frame {rich_frame['frameId']}", err)
+        else:
+            results.ok("No rich child frames found — skip getPageText sub-test")
+
+    except Exception as e:
+        results.fail("Cross-frame DOM", str(e))
+    finally:
+        await ws.close()
+
+
 # ==========================================
 # Runner
 # ==========================================
@@ -519,6 +770,13 @@ async def run_all_tests():
     await test_proxy_fetch(results)
     await test_parallel_commands(results)
 
+    # v3.0.2 tests
+    await test_list_frames(results)
+    await test_list_frames_missing_tabid(results)
+    await test_execute_script_all_frames(results)
+    await test_screenshot_mutex(results)
+    await test_cross_frame_dom(results)
+
     success = results.summary()
     return success
 
@@ -526,3 +784,4 @@ async def run_all_tests():
 if __name__ == "__main__":
     success = asyncio.run(run_all_tests())
     sys.exit(0 if success else 1)
+

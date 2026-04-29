@@ -8,7 +8,7 @@ StealthDOM replaces Playwright/Puppeteer by controlling the browser **from insid
 
 StealthDOM can be used in two ways:
 
-**AI Agents** connect via the MCP protocol — 44 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **05_api_reference.md** for complete API reference)
+**AI Agents** connect via the MCP protocol — 46 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **05_api_reference.md** for complete API reference)
 
 **Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses. (see **05_api_reference.md** for complete API reference)
 
@@ -35,7 +35,7 @@ Python Script  ──┘    (localhost:9878)
 
 The **background service worker** owns the bridge connection and handles privileged browser APIs (tabs, windows, screenshots, cookies, JS execution). It runs in the extension's own context, completely separate from any web page.
 
-The **content script** is injected into every page and provides direct DOM access — clicking elements, reading text, filling inputs, scrolling, hovering, drag-and-drop, etc. It receives commands from the background worker via `chrome.tabs.sendMessage` and never initiates any network connections itself, bypassing all page-level CSP restrictions.
+The **content script** is injected **on-demand** into tabs only when the first command targets them — it is **not** declared in `manifest.json`. This saves memory and CPU across all untouched tabs. When injected, it enters **all frames** (iframes, framesets), providing direct DOM access — clicking elements, reading text, filling inputs, scrolling, hovering, drag-and-drop, etc. It receives commands from the background worker via `chrome.tabs.sendMessage` (with optional `frameId` targeting) and never initiates any network connections itself, bypassing all page-level CSP restrictions.
 
 ## Why Not Playwright?
 
@@ -62,7 +62,7 @@ StealthDOM has been tested against major bot detection suites:
 
 ## Features
 
-- **44 automation commands**: DOM queries, clicks, typing, scrolling, keyboard, hover, drag-and-drop, navigation
+- **46 automation commands**: DOM queries, clicks, typing, scrolling, keyboard, hover, drag-and-drop, navigation
 - **Multi-browser support**: Connect Chrome, Brave, and Edge simultaneously — tabs from all browsers shown in one unified list
 - **Virtual tab IDs**: Namespaced as `"label:tabId"` (e.g., `"brave:12345"`) for transparent multi-browser routing
 - **Window management**: Open regular or incognito windows, resize, close
@@ -72,8 +72,10 @@ StealthDOM has been tested against major bot detection suites:
 - **JavaScript execution**: Arbitrary JS in page context — works on ALL sites including YouTube/Gmail (CSP headers auto-stripped)
 - **Network capture**: Circular buffer (5,000 entries) with overflow detection
 - **Proxy Fetch**: Route HTTP requests through the browser's real TLS fingerprint and cookies
-- **MCP integration**: Full MCP server with 44 tools, instructions, and capabilities resource
+- **MCP integration**: Full MCP server with 46 tools, instructions, and capabilities resource
+- **Cross-frame DOM access**: Target elements inside iframes and framesets via `frame_id` — works on Gmail, OAuth dialogs, payment widgets
 - **Explicit targeting**: All commands target tabs by ID — safe for multi-window, multi-agent use
+- **On-demand injection**: Content script only loads in tabs you actually use — zero overhead on untouched tabs
 - **Enable/Disable toggle**: Click the extension icon to globally enable/disable (restores site security when not in use)
 
 ## Quick Start

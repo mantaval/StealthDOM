@@ -30,7 +30,7 @@ Query a single DOM element by CSS selector. Returns element details (tag, id, cl
 ```json
 { "action": "querySelector", "selector": "#prompt-textarea" }
 ```
-**MCP Tool:** `browser_query(tab_id, selector)`  
+**MCP Tool:** `browser_query(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -47,7 +47,7 @@ Query all matching DOM elements. Returns count and element details array.
 { "action": "querySelectorAll", "selector": ".message" }
 { "action": "querySelectorAll", "selector": "div", "limit": 20 }
 ```
-**MCP Tool:** `browser_query_all(tab_id, selector, limit=0)`  
+**MCP Tool:** `browser_query_all(tab_id, selector, limit=0, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -62,7 +62,7 @@ Get the inner text content of a DOM element.
 ```json
 { "action": "getInnerText", "selector": "#content" }
 ```
-**MCP Tool:** `browser_get_text(tab_id, selector)`  
+**MCP Tool:** `browser_get_text(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -79,7 +79,7 @@ Get the outer HTML of a DOM element.
 { "action": "getOuterHTML", "selector": "#form" }
 { "action": "getOuterHTML", "selector": "body", "maxLength": 5000 }
 ```
-**MCP Tool:** `browser_get_html(tab_id, selector, max_length=0)`  
+**MCP Tool:** `browser_get_html(tab_id, selector, max_length=0, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -95,7 +95,7 @@ Get an HTML attribute value from a DOM element.
 ```json
 { "action": "getAttribute", "selector": "#link", "attribute": "href" }
 ```
-**MCP Tool:** `browser_get_attribute(tab_id, selector, attribute)`  
+**MCP Tool:** `browser_get_attribute(tab_id, selector, attribute, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -143,7 +143,7 @@ Get the bounding rectangle (position and size) of a DOM element.
 { "action": "getBoundingRect", "selector": "#button" }
 → { "data": { "x": 100, "y": 200, "width": 150, "height": 40, "top": 200, "left": 100, "bottom": 240, "right": 250 } }
 ```
-**MCP Tool:** `browser_get_bounding_rect(tab_id, selector)`  
+**MCP Tool:** `browser_get_bounding_rect(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -159,7 +159,7 @@ Wait for a DOM element to appear. Polls every 200ms.
 ```json
 { "action": "waitForSelector", "selector": ".loaded", "timeout": 10000 }
 ```
-**MCP Tool:** `browser_wait_for(tab_id, selector, timeout=10000)`  
+**MCP Tool:** `browser_wait_for(tab_id, selector, timeout=10000, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -191,7 +191,7 @@ Get the full visible text content of the current page.
 ```json
 { "action": "getPageText" }
 ```
-**MCP Tool:** `browser_get_page_text(tab_id)`  
+**MCP Tool:** `browser_get_page_text(tab_id, max_length=0, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -207,7 +207,7 @@ Get the full HTML of the current page.
 { "action": "getPageHTML" }
 { "action": "getPageHTML", "maxLength": 50000 }
 ```
-**MCP Tool:** `browser_get_page_html(tab_id, max_length=0)`  
+**MCP Tool:** `browser_get_page_html(tab_id, max_length=0, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -224,7 +224,7 @@ Click a DOM element. Element is scrolled into view first.
 ```json
 { "action": "click", "selector": "button.submit" }
 ```
-**MCP Tool:** `browser_click(tab_id, selector)`  
+**MCP Tool:** `browser_click(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -255,7 +255,7 @@ Type text into a DOM element (appends to existing content). Works with contented
 ```json
 { "action": "type", "selector": "#input", "text": "hello world" }
 ```
-**MCP Tool:** `browser_type(tab_id, selector, text)`  
+**MCP Tool:** `browser_type(tab_id, selector, text, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -271,7 +271,7 @@ Clear and fill a form input or contenteditable element with new text.
 ```json
 { "action": "fill", "selector": "#input", "value": "hello world" }
 ```
-**MCP Tool:** `browser_fill(tab_id, selector, value)`  
+**MCP Tool:** `browser_fill(tab_id, selector, value, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -316,7 +316,7 @@ Check a checkbox (no-op if already checked).
 ```json
 { "action": "check", "selector": "#checkbox" }
 ```
-**MCP Tool:** `browser_check(tab_id, selector)`  
+**MCP Tool:** `browser_check(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -331,7 +331,7 @@ Uncheck a checkbox (no-op if already unchecked).
 ```json
 { "action": "uncheck", "selector": "#checkbox" }
 ```
-**MCP Tool:** `browser_uncheck(tab_id, selector)`  
+**MCP Tool:** `browser_uncheck(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -347,7 +347,7 @@ Select an option in a dropdown/select element.
 ```json
 { "action": "selectOption", "selector": "#dropdown", "value": "option1" }
 ```
-**MCP Tool:** `browser_select(tab_id, selector, value)`  
+**MCP Tool:** `browser_select(tab_id, selector, value, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -362,7 +362,7 @@ Scroll an element smoothly into view (centered in viewport).
 ```json
 { "action": "scrollIntoView", "selector": ".target" }
 ```
-**MCP Tool:** `browser_scroll_into_view(tab_id, selector)`  
+**MCP Tool:** `browser_scroll_into_view(tab_id, selector, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -378,7 +378,7 @@ Scroll the page to specific coordinates.
 ```json
 { "action": "scrollTo", "x": 0, "y": 500 }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_scroll_to(tab_id, x=0, y=0, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -395,7 +395,7 @@ Press a single keyboard key (dispatches keydown + keyup).
 ```json
 { "action": "keyPress", "key": "Enter" }
 ```
-**MCP Tool:** `browser_press(tab_id, key)`  
+**MCP Tool:** `browser_press(tab_id, key, frame_id=None)`  
 **Handled by:** Content Script
 
 ---
@@ -410,7 +410,7 @@ Press a keyboard shortcut (key combination).
 ```json
 { "action": "keyCombo", "keys": ["Control", "Shift", "d"] }
 ```
-**MCP Tool:** `browser_key_combo(tab_id, keys)` — pass keys as comma-separated string: `"Control,Shift,d"`  
+**MCP Tool:** `browser_key_combo(tab_id, keys, frame_id=None)` — pass keys as comma-separated string: `"Control,Shift,d"`  
 **Handled by:** Content Script
 
 ---
@@ -535,7 +535,7 @@ Go forward in browser history.
 ```json
 { "action": "goForward" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_forward(tab_id)`  
 **Handled by:** Background
 
 ---
@@ -755,7 +755,7 @@ Set a cookie.
 ```json
 { "action": "setCookie", "details": { "url": "https://example.com", "name": "token", "value": "abc123" } }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_set_cookie(url, name, value, ...)`  
 **Handled by:** Background
 
 ---
@@ -771,7 +771,7 @@ Delete a cookie.
 ```json
 { "action": "deleteCookie", "url": "https://example.com", "name": "token" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_delete_cookie(url, name)`  
 **Handled by:** Background
 
 ---
@@ -805,7 +805,7 @@ Start capturing HTTP requests and responses.
 ```json
 { "action": "startNetCapture" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_start_net_capture()`  
 **Handled by:** Background
 
 ---
@@ -816,7 +816,7 @@ Stop capturing network traffic.
 ```json
 { "action": "stopNetCapture" }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_stop_net_capture()`  
 **Handled by:** Background
 
 ---
@@ -828,7 +828,7 @@ Get captured network traffic (array of request/response objects).
 { "action": "getNetCapture" }
 → { "data": [{ "url": "...", "method": "POST", "requestHeaders": {...}, "responseHeaders": {...}, "statusCode": 200 }] }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_get_net_capture()`  
 **Handled by:** Background
 
 ---
@@ -870,7 +870,7 @@ For file uploads with `bodyType: "base64file"`:
   "bodyType": "base64file" }
 ```
 
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_proxy_fetch(tab_id, url, method='GET', headers=None, body=None, body_type='json')`  
 **Handled by:** Content Script
 
 ---
@@ -888,7 +888,7 @@ Set files on a file input element using a data URL.
 ```json
 { "action": "setInputFiles", "selector": "input[type=file]", "dataUrl": "data:image/png;base64,..." }
 ```
-**MCP Tool:** *WebSocket only*  
+**MCP Tool:** `browser_upload_file(tab_id, selector, data_url)`  
 **Handled by:** Content Script
 
 ---
@@ -935,6 +935,7 @@ Every WebSocket command supports these parameters:
 | `_timeout` | integer | — | 30 | Timeout in seconds for the command |
 | `_msg_id` | string | — | — | Correlation ID echoed back in the response (for parallel request matching) |
 | `tabId` | integer | **✅ Required** | — | Target tab ID. **Required for all tab-scoped commands.** Use `listTabs` to discover IDs. |
+| `frameId` | integer | — | top-level | Target frame ID within the tab. Use `listFrames` to discover frame IDs. Omit for top-level frame. |
 
 > **Important:** `tabId` is **mandatory** for all tab-scoped commands (DOM, navigation, screenshots, evaluate, etc.).
 > There is no "active tab" fallback — commands without `tabId` will return an error.

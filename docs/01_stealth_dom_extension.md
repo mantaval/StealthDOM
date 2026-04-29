@@ -59,7 +59,7 @@ Content Script → DOM (native access)
 ```
 StealthDOM/
 ├── extension/
-│   ├── manifest.json          ← Manifest V3, injects on <all_urls>
+│   ├── manifest.json          ← Manifest V3 (no content_scripts — on-demand injection)
 │   ├── background.js          ← Service worker: WebSocket bridge connection,
 │   │                             command routing, tabs, windows, screenshots,
 │   │                             cookies, JS execution, network capture
@@ -76,7 +76,7 @@ StealthDOM/
 │                                 instructions and capabilities resource.
 │
 ├── tests/
-│   └── test_stealth_dom.py    ← Integration test suite (19 tests)
+│   └── test_stealth_dom.py    ← Integration test suite (39 assertions across 19 test functions)
 │
 └── docs/                      ← This documentation
 ```
@@ -113,11 +113,13 @@ StealthDOM/
 - Window management via `chrome.windows.create/remove/update/getAll`
 
 **Content Script** (`content_script.js`):
+- **Injected on-demand** — NOT declared in `manifest.json`. The background worker injects it lazily via `chrome.scripting.executeScript({ allFrames: true })` when the first command targets a tab, saving memory on untouched tabs.
 - Runs in the **ISOLATED world** (has DOM access but separate JS context from the page)
 - **Passive listener** — does NOT connect to the bridge directly
 - Receives commands from background service worker via `chrome.runtime.onMessage`
 - Handles DOM commands: querySelector, click, type, scroll, etc.
 - Forwards `evaluate` commands to background for MAIN world JS execution
+- Includes a double-injection guard (`window.__stealthDomLoaded`) to prevent redundant re-initialization
 
 ### How StealthDOM Bypasses CSP
 
@@ -209,7 +211,7 @@ and close the browser, it stays disabled the next time you open it.
 
 ---
 
-## Full Command API (35+ Commands)
+## Full Command API (46 Commands)
 
 ### DOM Queries
 ```json
@@ -413,11 +415,11 @@ asyncio.run(test())
 
 ## MCP Integration
 
-StealthDOM includes a full MCP server (`stealth_dom_mcp.py`) that exposes all 35+ commands as MCP tools. The server includes:
+StealthDOM includes a full MCP server (`stealth_dom_mcp.py`) that exposes all 46 commands as MCP tools. The server includes:
 
 - **Instructions**: Automatically sent to AI agents explaining what StealthDOM is and why to use it over Playwright
-- **Capabilities Resource**: A static `stealth://capabilities` resource AI agents can read for full tool reference (string embedded directly inside stealth_dom_mcp.py for agent )
-- **35+ Tools**: Every command has a corresponding MCP tool with descriptive docstrings
+- **Capabilities Resource**: A static `stealth://capabilities` resource AI agents can read for full tool reference (string embedded directly inside stealth_dom_mcp.py for agent consumption)
+- **46 Tools**: Every command has a corresponding MCP tool with descriptive docstrings
 
 ### MCP Configuration
 

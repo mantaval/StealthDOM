@@ -1,8 +1,13 @@
 /**
  * StealthDOM -- Content Script
  * 
- * Injected into ALL pages. Receives DOM commands from the
- * background service worker via chrome.runtime messaging.
+ * Injected ON-DEMAND into tabs when the first command targets them.
+ * NOT declared in manifest.json — the background service worker
+ * uses chrome.scripting.executeScript to inject this lazily,
+ * saving memory and CPU across all untouched tabs.
+ * 
+ * Receives DOM commands from the background service worker
+ * via chrome.runtime messaging.
  * 
  * This runs INSIDE the real browser -- completely undetectable.
  * No CDP, no Playwright, no automation flags.
@@ -14,6 +19,10 @@
 
 (() => {
     'use strict';
+
+    // Guard against double-injection (on-demand injection may fire multiple times)
+    if (window.__stealthDomLoaded) return;
+    window.__stealthDomLoaded = true;
 
     // ==========================================
     // Message Listener (from Background Script)
@@ -658,18 +667,21 @@
                 document.body.appendChild(el);
                 document.body.removeChild(el);
             } catch (e) { }
-        }, 1000);
+        }, 15000);  // 15s — just prevents browser from fully suspending the tab
     }
 
     // ==========================================
     // Initialization
     // ==========================================
 
-    console.log('[StealthDOM] Content script loaded on', window.location.href, '(passive mode)');
+    // Only log in top frame to reduce noise
+    if (window === window.top) {
+        console.log('[StealthDOM] Content script injected (on-demand)');
+    }
     try {
         setupAntiThrottle();
     } catch (e) {
-        console.error('[StealthDOM] setupAntiThrottle() failed:', e);
+        // Silently fail — anti-throttle is optional
     }
 
 })();
