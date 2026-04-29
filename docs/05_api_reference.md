@@ -545,7 +545,7 @@ Reload a tab.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tabId` | integer | ✅ | — | ID of tab to reload |
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId like `"chrome:12345"`) |
 
 ```json
 { "action": "reloadTab", "tabId": 123 }
@@ -588,7 +588,7 @@ Close a browser tab.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tabId` | integer | ✅ | — | ID of the tab to close |
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId like `"chrome:12345"`) |
 
 ```json
 { "action": "closeTab", "tabId": 123 }
@@ -603,7 +603,7 @@ Switch to (activate) a browser tab and focus its window.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tabId` | integer | ✅ | — | ID of the tab to switch to |
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId like `"chrome:12345"`) |
 
 ```json
 { "action": "switchTab", "tabId": 123 }
@@ -697,7 +697,7 @@ Capture a screenshot of a specific tab as PNG. The tab is activated and its wind
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tabId` | integer | ✅ | — | ID of the tab to screenshot |
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId like `"chrome:12345"`) |
 
 ```json
 { "action": "captureScreenshot", "tabId": 123 }
@@ -714,7 +714,7 @@ Capture a full-page screenshot by scrolling through the page and stitching viewp
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `tabId` | integer | ✅ | — | ID of the tab to screenshot |
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId like `"chrome:12345"`) |
 | `maxHeight` | integer | — | 20000 | Maximum page height to capture in pixels. Prevents memory issues on infinite-scroll pages. |
 
 ```json
@@ -934,7 +934,7 @@ Every WebSocket command supports these parameters:
 |-----------|------|----------|---------|-------------|
 | `_timeout` | integer | — | 30 | Timeout in seconds for the command |
 | `_msg_id` | string | — | — | Correlation ID echoed back in the response (for parallel request matching) |
-| `tabId` | integer | **✅ Required** | — | Target tab ID. **Required for all tab-scoped commands.** Use `listTabs` to discover IDs. |
+| `tabId` | integer or string | **✅ Required** | — | Tab ID (numeric or virtualId like `"chrome:12345"`). **Required for all tab-scoped commands.** Use `listTabs` to discover IDs. |
 | `frameId` | integer | — | top-level | Target frame ID within the tab. Use `listFrames` to discover frame IDs. Omit for top-level frame. |
 
 > **Important:** `tabId` is **mandatory** for all tab-scoped commands (DOM, navigation, screenshots, evaluate, etc.).

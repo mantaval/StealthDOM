@@ -350,7 +350,7 @@ This enables targeting elements inside iframes and framesets (Gmail, OAuth dialo
 # ==========================================
 
 @mcp.tool()
-async def browser_query(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_query(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Query a single DOM element by CSS selector. Returns element details (tag, id, class, text, visibility).
     
     Args:
@@ -370,7 +370,7 @@ async def browser_query(tab_id: int, selector: str, frame_id: int = None) -> str
 
 
 @mcp.tool()
-async def browser_query_all(tab_id: int, selector: str, limit: int = 0, frame_id: int = None) -> str:
+async def browser_query_all(tab_id: int | str, selector: str, limit: int = 0, frame_id: int = None) -> str:
     """Query all DOM elements matching a CSS selector. Returns list of element details.
     
     Args:
@@ -388,7 +388,7 @@ async def browser_query_all(tab_id: int, selector: str, limit: int = 0, frame_id
 
 
 @mcp.tool()
-async def browser_get_text(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_get_text(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Get the inner text content of a DOM element.
     
     Args:
@@ -405,7 +405,7 @@ async def browser_get_text(tab_id: int, selector: str, frame_id: int = None) -> 
 
 
 @mcp.tool()
-async def browser_get_html(tab_id: int, selector: str, max_length: int = 0, frame_id: int = None) -> str:
+async def browser_get_html(tab_id: int | str, selector: str, max_length: int = 0, frame_id: int = None) -> str:
     """Get the outer HTML of a DOM element.
     
     Args:
@@ -423,7 +423,7 @@ async def browser_get_html(tab_id: int, selector: str, max_length: int = 0, fram
 
 
 @mcp.tool()
-async def browser_get_attribute(tab_id: int, selector: str, attribute: str, frame_id: int = None) -> str:
+async def browser_get_attribute(tab_id: int | str, selector: str, attribute: str, frame_id: int = None) -> str:
     """Get an HTML attribute value from a DOM element.
     
     Args:
@@ -441,7 +441,7 @@ async def browser_get_attribute(tab_id: int, selector: str, attribute: str, fram
 
 
 @mcp.tool()
-async def browser_wait_for(tab_id: int, selector: str, timeout: int = 10000, frame_id: int = None) -> str:
+async def browser_wait_for(tab_id: int | str, selector: str, timeout: int = 10000, frame_id: int = None) -> str:
     """Wait for a DOM element to appear. Polls every 200ms until found or timeout.
     
     Args:
@@ -459,7 +459,7 @@ async def browser_wait_for(tab_id: int, selector: str, timeout: int = 10000, fra
 
 
 @mcp.tool()
-async def browser_get_bounding_rect(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_get_bounding_rect(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Get the bounding rectangle (position and size) of a DOM element.
     
     Args:
@@ -480,7 +480,7 @@ async def browser_get_bounding_rect(tab_id: int, selector: str, frame_id: int = 
 # ==========================================
 
 @mcp.tool()
-async def browser_click(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_click(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Click a DOM element. Element is scrolled into view first.
     
     Args:
@@ -497,7 +497,7 @@ async def browser_click(tab_id: int, selector: str, frame_id: int = None) -> str
 
 
 @mcp.tool()
-async def browser_type(tab_id: int, selector: str, text: str, frame_id: int = None) -> str:
+async def browser_type(tab_id: int | str, selector: str, text: str, frame_id: int = None) -> str:
     """Type text into a DOM element (appends to existing content). Works with contenteditable divs.
     
     Args:
@@ -515,7 +515,7 @@ async def browser_type(tab_id: int, selector: str, text: str, frame_id: int = No
 
 
 @mcp.tool()
-async def browser_fill(tab_id: int, selector: str, value: str, frame_id: int = None) -> str:
+async def browser_fill(tab_id: int | str, selector: str, value: str, frame_id: int = None) -> str:
     """Clear and fill a form input or contenteditable element with new text.
     
     Args:
@@ -533,7 +533,7 @@ async def browser_fill(tab_id: int, selector: str, value: str, frame_id: int = N
 
 
 @mcp.tool()
-async def browser_press(tab_id: int, key: str, frame_id: int = None) -> str:
+async def browser_press(tab_id: int | str, key: str, frame_id: int = None) -> str:
     """Press a single keyboard key.
     
     Args:
@@ -550,7 +550,7 @@ async def browser_press(tab_id: int, key: str, frame_id: int = None) -> str:
 
 
 @mcp.tool()
-async def browser_key_combo(tab_id: int, keys: str, frame_id: int = None) -> str:
+async def browser_key_combo(tab_id: int | str, keys: str, frame_id: int = None) -> str:
     """Press a keyboard shortcut (key combination).
     
     Args:
@@ -568,7 +568,7 @@ async def browser_key_combo(tab_id: int, keys: str, frame_id: int = None) -> str
 
 
 @mcp.tool()
-async def browser_scroll_into_view(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_scroll_into_view(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Scroll an element smoothly into view (centered in viewport).
     
     Args:
@@ -585,7 +585,7 @@ async def browser_scroll_into_view(tab_id: int, selector: str, frame_id: int = N
 
 
 @mcp.tool()
-async def browser_select(tab_id: int, selector: str, value: str, frame_id: int = None) -> str:
+async def browser_select(tab_id: int | str, selector: str, value: str, frame_id: int = None) -> str:
     """Select an option in a dropdown/select element.
     
     Args:
@@ -603,7 +603,7 @@ async def browser_select(tab_id: int, selector: str, value: str, frame_id: int =
 
 
 @mcp.tool()
-async def browser_check(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_check(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Check a checkbox (no-op if already checked).
     
     Args:
@@ -620,7 +620,7 @@ async def browser_check(tab_id: int, selector: str, frame_id: int = None) -> str
 
 
 @mcp.tool()
-async def browser_uncheck(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_uncheck(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Uncheck a checkbox (no-op if already unchecked).
     
     Args:
@@ -637,7 +637,7 @@ async def browser_uncheck(tab_id: int, selector: str, frame_id: int = None) -> s
 
 
 @mcp.tool()
-async def browser_hover(tab_id: int, selector: str, frame_id: int = None) -> str:
+async def browser_hover(tab_id: int | str, selector: str, frame_id: int = None) -> str:
     """Hover over a DOM element (triggers mouseenter, mouseover, mousemove).
     Useful for revealing dropdown menus, tooltips, and hover-activated UI.
 
@@ -655,7 +655,7 @@ async def browser_hover(tab_id: int, selector: str, frame_id: int = None) -> str
 
 
 @mcp.tool()
-async def browser_drag_and_drop(tab_id: int, source_selector: str, target_selector: str, frame_id: int = None) -> str:
+async def browser_drag_and_drop(tab_id: int | str, source_selector: str, target_selector: str, frame_id: int = None) -> str:
     """Drag an element and drop it onto another element using the HTML5 Drag API.
     Works for drag-enabled libraries (Kanban boards, sortable lists, file drop zones).
 
@@ -684,7 +684,7 @@ async def browser_drag_and_drop(tab_id: int, source_selector: str, target_select
 #   double-click: browser_evaluate(tab_id, 'document.querySelector("#id").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))')
 
 @mcp.tool()
-async def browser_navigate(tab_id: int, url: str) -> str:
+async def browser_navigate(tab_id: int | str, url: str) -> str:
     """Navigate the active tab to a URL.
     
     Args:
@@ -698,7 +698,7 @@ async def browser_navigate(tab_id: int, url: str) -> str:
 
 
 @mcp.tool()
-async def browser_reload(tab_id: int) -> str:
+async def browser_reload(tab_id: int | str) -> str:
     """Reload the current page.
     
     Args:
@@ -711,7 +711,7 @@ async def browser_reload(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_forward(tab_id: int) -> str:
+async def browser_forward(tab_id: int | str) -> str:
     """Go forward in browser history.
 
     Args:
@@ -724,7 +724,7 @@ async def browser_forward(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_wait_for_url(tab_id: int, pattern: str, timeout: int = 10000) -> str:
+async def browser_wait_for_url(tab_id: int | str, pattern: str, timeout: int = 10000) -> str:
     """Wait for the tab's URL to match a pattern. Ideal for SPA navigation.
     Pattern can be a substring (e.g., '/dashboard') or a regex (e.g., '/order/[0-9]+/').
 
@@ -741,7 +741,7 @@ async def browser_wait_for_url(tab_id: int, pattern: str, timeout: int = 10000) 
 
 
 @mcp.tool()
-async def browser_scroll_to(tab_id: int, x: int = 0, y: int = 0, frame_id: int = None) -> str:
+async def browser_scroll_to(tab_id: int | str, x: int = 0, y: int = 0, frame_id: int = None) -> str:
     """Scroll the page to specific coordinates.
 
     Args:
@@ -759,7 +759,7 @@ async def browser_scroll_to(tab_id: int, x: int = 0, y: int = 0, frame_id: int =
 
 
 @mcp.tool()
-async def browser_back(tab_id: int) -> str:
+async def browser_back(tab_id: int | str) -> str:
     """Go back in browser history.
 
     Args:
@@ -772,7 +772,7 @@ async def browser_back(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_get_url(tab_id: int) -> str:
+async def browser_get_url(tab_id: int | str) -> str:
     """Get the current page URL.
     
     Args:
@@ -785,7 +785,7 @@ async def browser_get_url(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_get_title(tab_id: int) -> str:
+async def browser_get_title(tab_id: int | str) -> str:
     """Get the current page title.
     
     Args:
@@ -798,7 +798,7 @@ async def browser_get_title(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_get_page_text(tab_id: int, max_length: int = 0, frame_id: int = None) -> str:
+async def browser_get_page_text(tab_id: int | str, max_length: int = 0, frame_id: int = None) -> str:
     """Get the full visible text content of the current page.
     
     Args:
@@ -815,7 +815,7 @@ async def browser_get_page_text(tab_id: int, max_length: int = 0, frame_id: int 
 
 
 @mcp.tool()
-async def browser_get_page_html(tab_id: int, max_length: int = 0, frame_id: int = None) -> str:
+async def browser_get_page_html(tab_id: int | str, max_length: int = 0, frame_id: int = None) -> str:
     """Get the full HTML of the current page.
     
     Args:
@@ -832,7 +832,7 @@ async def browser_get_page_html(tab_id: int, max_length: int = 0, frame_id: int 
 
 
 @mcp.tool()
-async def browser_screenshot(tab_id: int, save_path: str = None) -> str:
+async def browser_screenshot(tab_id: int | str, save_path: str = None) -> str:
     """Take a screenshot of the specified tab. Returns base64 PNG data URL.
     
     Args:
@@ -858,7 +858,7 @@ async def browser_screenshot(tab_id: int, save_path: str = None) -> str:
 
 
 @mcp.tool()
-async def browser_screenshot_full_page(tab_id: int, max_height: int = 20000, save_path: str = None) -> str:
+async def browser_screenshot_full_page(tab_id: int | str, max_height: int = 20000, save_path: str = None) -> str:
     """Take a full-page screenshot by scrolling and stitching viewport captures.
     Captures the entire document, not just the visible area. Sticky/fixed elements
     are automatically hidden during middle frames to avoid duplication.
@@ -886,7 +886,7 @@ async def browser_screenshot_full_page(tab_id: int, max_height: int = 20000, sav
 
 
 @mcp.tool()
-async def browser_evaluate(tab_id: int, code: str, world: str = "MAIN") -> str:
+async def browser_evaluate(tab_id: int | str, code: str, world: str = "MAIN") -> str:
     """Execute arbitrary JavaScript code in the specified world context.
     - MAIN (default): Standard page context (window, document).
     - ISOLATED: Content script context (can access chrome.runtime, chrome.storage, etc).
@@ -904,7 +904,7 @@ async def browser_evaluate(tab_id: int, code: str, world: str = "MAIN") -> str:
 
 
 @mcp.tool()
-async def browser_list_frames(tab_id: int) -> str:
+async def browser_list_frames(tab_id: int | str) -> str:
     """List all frames (iframes, framesets) in a tab. Returns URL, title, and body
     presence for each frame. Essential for pages where standard tools return null
     because the UI lives inside a <frame> or <iframe> (e.g., Gmail compose, OAuth dialogs).
@@ -919,7 +919,7 @@ async def browser_list_frames(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_evaluate_all_frames(tab_id: int, code: str, world: str = "MAIN") -> str:
+async def browser_evaluate_all_frames(tab_id: int | str, code: str, world: str = "MAIN") -> str:
     """Execute JavaScript in ALL frames of a tab and return per-frame results.
     Use when the target content lives inside a <frame> or <iframe> and standard
     browser_evaluate returns null. Each result includes frameIndex and frameId.
@@ -962,7 +962,7 @@ async def browser_new_tab(url: str = "about:blank") -> str:
 
 
 @mcp.tool()
-async def browser_close_tab(tab_id: int) -> str:
+async def browser_close_tab(tab_id: int | str) -> str:
     """Close a browser tab.
     
     Args:
@@ -975,7 +975,7 @@ async def browser_close_tab(tab_id: int) -> str:
 
 
 @mcp.tool()
-async def browser_switch_tab(tab_id: int) -> str:
+async def browser_switch_tab(tab_id: int | str) -> str:
     """Switch to (activate) a browser tab and focus its window.
     
     Args:
@@ -1163,7 +1163,7 @@ async def browser_delete_cookie(url: str, name: str) -> str:
 
 
 @mcp.tool()
-async def browser_upload_file(tab_id: int, selector: str, data_url: str) -> str:
+async def browser_upload_file(tab_id: int | str, selector: str, data_url: str) -> str:
     """Set a file on an input[type=file] element using a data URL.
     Use browser_evaluate to read a local file as base64 first, or construct
     a data URL directly (e.g., 'data:image/png;base64,...').
@@ -1181,7 +1181,7 @@ async def browser_upload_file(tab_id: int, selector: str, data_url: str) -> str:
 
 @mcp.tool()
 async def browser_proxy_fetch(
-    tab_id: int,
+    tab_id: int | str,
     url: str,
     method: str = "GET",
     headers: dict = None,
