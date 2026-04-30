@@ -126,7 +126,12 @@ async def send_command(action: str, _timeout: float = 30, **kwargs) -> dict:
         result = await asyncio.wait_for(future, _timeout + 5)
         return validate_response(result)
     except asyncio.TimeoutError:
-        return {'success': False, 'error': f'Command {action} timed out after {_timeout}s'}
+        error_msg = f'Command {action} timed out after {_timeout}s'
+        if action in ["captureScreenshot", "captureFullPageScreenshot"]:
+            error_msg += ". (Hint: Chromium suspends graphics for minimized/occluded windows, causing screenshots to hang. Do NOT minimize the browser. If you need it hidden, use browser_resize_window to move it off-screen: x=-10000. Alternatively, a human user or another AI agent might have DevTools open on this tab, forcing a fallback.)"
+        elif action == "waitForUrl":
+            error_msg += ". (Hint: The page might have redirected or the network is slow. Call browser_get_url() to check your current location before retrying.)"
+        return {'success': False, 'error': error_msg}
     except Exception as e:
         return {'success': False, 'error': str(e)}
     finally:

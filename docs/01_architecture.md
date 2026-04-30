@@ -26,7 +26,7 @@ StealthDOM/
 ```
 1. Bridge server starts on ports 9877 (extension) and 9878 (clients)
 2. Background service worker connects to ws://127.0.0.1:9877
-3. Service worker sends heartbeats every 5 seconds to stay alive
+3. Service worker sends keepalive pings every 20 seconds to prevent Chromium from killing it
 4. Client (Python/MCP) connects to ws://127.0.0.1:9878
 5. Client sends command:
    { "action": "click", "selector": "#btn", "tabId": 123, "_msg_id": "abc" }
@@ -62,7 +62,7 @@ Content scripts are **NOT** declared in `manifest.json`. Instead, the background
 **Why:**
 - Saves memory — scripts aren't loaded on tabs you never interact with
 - Works across all frames — `allFrames: true` injects into every `<frame>` and `<iframe>`, giving native DOM access to framesets (like Gmail's compose view) and embedded content
-- Includes a double-injection guard (`window.__stealthDomLoaded`) to prevent redundant initialization
+- Includes a double-injection guard using a non-enumerable `Symbol`-keyed property — invisible to `Object.keys`, `for...in`, and `JSON.stringify`, even within the isolated world
 
 **Cross-frame workflow:** When you need to interact with content inside an iframe:
 1. `browser_list_frames(tab_id)` → discover all frames and their IDs
@@ -137,7 +137,6 @@ await send(ws, "click", selector="#btn", tabId=tab_id)
 
 Chromium's Manifest V3 service workers can be terminated after ~30 seconds of inactivity. StealthDOM mitigates this with:
 - A 20-second keepalive interval (`chrome.runtime.getPlatformInfo`)
-- A 5-second bridge heartbeat
 - Automatic reconnection on service worker restart
 
 > **Tip:** Opening the service worker's DevTools (from `chrome://extensions`) keeps it alive indefinitely during development.

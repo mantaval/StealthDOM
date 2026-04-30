@@ -21,8 +21,11 @@
     'use strict';
 
     // Guard against double-injection (on-demand injection may fire multiple times)
-    if (window.__stealthDomLoaded) return;
-    window.__stealthDomLoaded = true;
+    // Uses a Symbol on window so the guard is invisible to Object.keys/for-in/JSON.stringify,
+    // and the symbol description is generic to avoid identifying the extension.
+    const _guard = Symbol.for('__cs_init');
+    if (window[_guard]) return;
+    Object.defineProperty(window, _guard, { value: true, configurable: false });
 
     // ==========================================
     // Message Listener (from Background Script)
@@ -174,6 +177,17 @@
     }
 
     // ==========================================
+    // Error Helpers
+    // ==========================================
+
+    function elementNotFoundError(selector) {
+        return { 
+            success: false, 
+            error: `Element not found: ${selector}. (Hint: If the page is still loading, use browser_wait_for. If the element is inside an iframe, use browser_list_frames and pass frame_id. Otherwise, check your selector.)` 
+        };
+    }
+
+    // ==========================================
     // Page Status
     // ==========================================
 
@@ -228,26 +242,26 @@
 
     function cmdGetAttribute(selector, attribute) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         return { success: true, data: el.getAttribute(attribute) };
     }
 
     function cmdGetProperty(selector, property) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         return { success: true, data: el[property] };
     }
 
     function cmdGetComputedStyleProp(selector, property) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         const style = window.getComputedStyle(el);
         return { success: true, data: style.getPropertyValue(property) };
     }
 
     function cmdGetBoundingRect(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         const rect = el.getBoundingClientRect();
         return {
             success: true,
@@ -288,7 +302,7 @@
 
     function cmdClick(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.scrollIntoView({ block: 'center' });
         // Full event sequence for better SPA compatibility
         const rect = el.getBoundingClientRect();
@@ -303,7 +317,7 @@
 
     function cmdDblClick(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.scrollIntoView({ block: 'center' });
         el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
         return { success: true };
@@ -315,7 +329,7 @@
      */
     function cmdHover(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.scrollIntoView({ block: 'center' });
         const rect = el.getBoundingClientRect();
         const cx = Math.round(rect.left + rect.width / 2);
@@ -355,7 +369,7 @@
 
     function cmdType(selector, text) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.focus();
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
             // Use native value setter for proper React/Vue/Angular compatibility
@@ -378,7 +392,7 @@
 
     function cmdFill(selector, value) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.focus();
         // For regular inputs
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
@@ -403,35 +417,35 @@
 
     function cmdFocus(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.focus();
         return { success: true };
     }
 
     function cmdBlur(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.blur();
         return { success: true };
     }
 
     function cmdCheck(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         if (!el.checked) el.click();
         return { success: true };
     }
 
     function cmdUncheck(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         if (el.checked) el.click();
         return { success: true };
     }
 
     function cmdSelectOption(selector, value) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.value = value;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return { success: true };
@@ -439,7 +453,7 @@
 
     function cmdScrollIntoView(selector) {
         const el = document.querySelector(selector);
-        if (!el) return { success: false, error: `Element not found: ${selector}` };
+        if (!el) return elementNotFoundError(selector);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return { success: true };
     }

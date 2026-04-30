@@ -14,7 +14,7 @@ Prior to v3.2.0, StealthDOM relied on `chrome.tabs.captureVisibleTab` for screen
 
 3. **Complex full-page logic.** Since `captureVisibleTab` only captures the visible viewport, full-page screenshots require scrolling through the page frame by frame, hiding sticky elements to avoid duplication, stitching frames in an OffscreenCanvas, and handling edge cases like lazy-loaded content. This is 100+ lines of fragile code.
 
-These were documented as Issues 2 and 4 in `KNOWN_ISSUES.md`. Despite mitigations (a mutex for the quota, state-restore for the focus steal), the fundamental limitations of the API could not be worked around.
+Despite initial mitigations (a mutex for the quota, state-restore for the focus steal), the fundamental limitations of the `captureVisibleTab` API could not be bypassed, which is why a completely new architecture was required.
 
 ---
 
@@ -46,15 +46,20 @@ MCP/WebSocket → background.js → chrome.debugger.attach(tabId)
 
 For full-page captures, CDP uses `Page.getLayoutMetrics` to measure the full document, `Emulation.setDeviceMetricsOverride` to expand the virtual viewport, and `Page.captureScreenshot` with `captureBeyondViewport: true` to render everything in a single shot.
 
-### When does the fallback activate?
+### The Two-Tier Safety Net: Why We Need Both
 
-CDP failure is extremely rare in practice. There are only two scenarios:
+It might seem redundant to keep `captureVisibleTab` when CDP is so vastly superior, but having both creates a highly resilient two-tier safety net:
 
-- **DevTools is open on the exact tab being captured.** Chrome allows only one debugger per tab. If the user has DevTools open on the specific tab StealthDOM is trying to screenshot, `chrome.debugger.attach()` fails with "Another debugger is already attached." The user would have to be inspecting the exact tab being automated.
+#### Tier 1: The CDP Path (Primary)
+Chrome DevTools Protocol (CDP) is lightning-fast, has zero rate limits, and works completely invisibly in the background without stealing focus. However, CDP has one fatal weakness: **Chromium strictly forbids two debuggers from attaching to the same tab at once.** 
+If a human user presses F12 to open the Chrome DevTools inspector to look at the automated tab, `chrome.debugger.attach()` instantly fails with an error ("Another debugger is already attached"). If we only had CDP, the moment the user pressed F12, the AI agent would go completely blind.
 
-- **The tab is a browser-internal page** (`chrome://`, `brave://`, etc.) — Chrome blocks debugger attachment to these pages. But StealthDOM already rejects commands on internal pages, so this isn't a new failure.
+#### Tier 2: The `captureVisibleTab` Path (Fallback)
+To prevent the agent from going blind during human inspection, we fallback to `captureVisibleTab`. Because this API is a standard browser UI function and not a debugger, **it works perfectly even if the user has DevTools open.** The tradeoff is that it is heavily rate-limited by Google and physically requires the tab to be visible on the monitor (which is why it forces the browser to pop up and steal focus). 
 
-In both cases, the fallback to `captureVisibleTab` is silent. The response shape is identical regardless of which path was used — the caller never knows.
+**Summary:** The CDP path guarantees that 99% of the time, the agent is fast and invisible. The `captureVisibleTab` fallback guarantees that the remaining 1% of the time, the agent never loses its vision.
+
+*(Note: We are also exploring a potential **Tier 3 Fallback** utilizing `html2canvas`—a JavaScript rendering composition injected into the page. If both CDP and the visible tab fallback fail (e.g., if the browser is minimized or 100% occluded by an Always-on-Top application), this third path could manually read the DOM tree and paint it onto an HTML5 canvas, completely bypassing Chromium's suspended graphics engine!)*
 
 ---
 

@@ -48,7 +48,7 @@ async function ensureContentScriptInjected(tabId) {
         _injectedTabs.add(tabId);
     } catch (e) {
         // Don't add to set — let the next command retry
-        throw new Error(`Content script injection failed: ${e.message}`);
+        throw new Error(`Content script injection failed: ${e.message}. If the tab is sleeping/discarded, use browser_reload or browser_switch_tab to wake it up first.`);
     }
 }
 
@@ -432,7 +432,7 @@ async function handleBackgroundCommand(msg) {
         case 'closeWindow':
             return await cmdCloseWindow(msg.windowId);
         case 'resizeWindow':
-            return await cmdResizeWindow(msg.windowId, msg.width, msg.height, msg.left, msg.top);
+            return await cmdResizeWindow(msg.windowId, msg.width, msg.height, msg.left, msg.top, msg.state);
 
         // === Network Capture ===
         case 'startNetCapture':
@@ -639,22 +639,23 @@ async function bridgeForwardToContentScript(msg) {
         // content script listener, while still defaulting to frame 0 for
         // SPAs (Twitter) that have hidden iframes.
         const result = await new Promise((resolve) => {
+            const staleTip = " (If the extension was recently reloaded or the tab is unresponsive, use browser_reload to refresh the tab and re-inject the script)";
             chrome.tabs.sendMessage(targetId, contentMsg, sendOpts, (response) => {
                 if (chrome.runtime.lastError) {
                     // Frame 0 had no content script — retry without frameId (broadcast)
                     if (msg.frameId === undefined || msg.frameId === null) {
                         chrome.tabs.sendMessage(targetId, contentMsg, {}, (fallbackResp) => {
                             if (chrome.runtime.lastError) {
-                                resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}` });
+                                resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}.${staleTip}` });
                             } else {
-                                resolve(fallbackResp || { success: false, error: 'No response from content script' });
+                                resolve(fallbackResp || { success: false, error: `No response from content script.${staleTip}` });
                             }
                         });
                     } else {
-                        resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}` });
+                        resolve({ success: false, error: `Content script error: ${chrome.runtime.lastError.message}.${staleTip}` });
                     }
                 } else {
-                    resolve(response || { success: false, error: 'No response from content script' });
+                    resolve(response || { success: false, error: `No response from content script.${staleTip}` });
                 }
             });
         });
@@ -788,6 +789,7 @@ async function cmdCaptureScreenshotCDP(tabId) {
                 dataUrl: 'data:image/png;base64,' + result.data,
                 format: 'png',
                 tabId,
+                method: 'cdp',
             }
         };
     } catch (e) {
@@ -850,6 +852,7 @@ async function cmdCaptureFullPageScreenshotCDP(tabId, maxHeight = 20000) {
                 dataUrl: 'data:image/png;base64,' + result.data,
                 format: 'png',
                 tabId,
+                method: 'cdp',
                 fullPage: true,
                 dimensions: {
                     width: contentWidth,
@@ -958,6 +961,7 @@ async function cmdCaptureScreenshot(tabId) {
                 dataUrl,
                 format: 'png',
                 tabId: tabId,
+                method: 'captureVisibleTab',
             }
         };
     } catch (e) {
@@ -1185,6 +1189,7 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
                 dataUrl: resultDataUrl,
                 format: 'png',
                 tabId: tabId,
+                method: 'captureVisibleTab',
                 fullPage: true,
                 dimensions: {
                     width: pixelWidth,
@@ -1679,17 +1684,18 @@ async function cmdCloseWindow(windowId) {
     }
 }
 
-async function cmdResizeWindow(windowId, width, height, left, top) {
+async function cmdResizeWindow(windowId, width, height, left, top, state) {
     try {
         const updateInfo = {};
         if (width) updateInfo.width = width;
         if (height) updateInfo.height = height;
         if (left !== undefined) updateInfo.left = left;
         if (top !== undefined) updateInfo.top = top;
+        if (state) updateInfo.state = state;
         const win = await chrome.windows.update(windowId, updateInfo);
         return {
             success: true,
-            data: { width: win.width, height: win.height, left: win.left, top: win.top },
+            data: { width: win.width, height: win.height, left: win.left, top: win.top, state: win.state },
         };
     } catch (e) {
         return { success: false, error: `resizeWindow failed: ${e.message}` };
