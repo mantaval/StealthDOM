@@ -1673,6 +1673,88 @@ async def test_incognito_window(results: TestResults):
         await ws.close()
 
 
+async def test_mouse_cdp(results: TestResults):
+    """Test CDP-based native mouse tools (move, click, down, up, drag, wheel)."""
+    print("\n[Test: Mouse via CDP]")
+    ws = await websockets.connect(BRIDGE_URL)
+    try:
+        tab_id = await ensure_test_tab(ws, "https://httpbin.org/html")
+
+        # 1. Get bounding rect of a visible element to have real coordinates
+        r = await bridge_send(ws, "getBoundingRect", tabId=tab_id, selector="h1")
+        if not r.get("success"):
+            # Some pages may not have h1, fall back to body
+            r = await bridge_send(ws, "getBoundingRect", tabId=tab_id, selector="body")
+        assert r.get("success"), f"getBoundingRect failed: {r.get('error')}"
+        rect = r["data"]
+        cx = int(rect["x"] + rect["width"] / 2)
+        cy = int(rect["y"] + rect["height"] / 2)
+        results.ok(f"Got target coordinates ({cx}, {cy})")
+
+        # 2. mouseMoveCDP — move to element center
+        r = await bridge_send(ws, "mouseMoveCDP", tabId=tab_id, x=cx, y=cy,
+                              steps=5, duration=100)
+        if r.get("success"):
+            results.ok("mouseMoveCDP succeeded")
+        else:
+            results.fail("mouseMoveCDP", r.get("error"))
+
+        # 3. mouseClickCDP — single left click
+        r = await bridge_send(ws, "mouseClickCDP", tabId=tab_id, x=cx, y=cy,
+                              button="left", clickCount=1)
+        if r.get("success"):
+            results.ok("mouseClickCDP (single left) succeeded")
+        else:
+            results.fail("mouseClickCDP", r.get("error"))
+
+        # 4. mouseClickCDP — double click
+        r = await bridge_send(ws, "mouseClickCDP", tabId=tab_id, x=cx, y=cy,
+                              button="left", clickCount=2)
+        if r.get("success"):
+            results.ok("mouseClickCDP (double-click) succeeded")
+        else:
+            results.fail("mouseClickCDP double", r.get("error"))
+
+        # 5. mouseDownCDP + mouseUpCDP — press and release
+        r = await bridge_send(ws, "mouseDownCDP", tabId=tab_id, x=cx, y=cy, button="left")
+        if r.get("success"):
+            results.ok("mouseDownCDP succeeded")
+        else:
+            results.fail("mouseDownCDP", r.get("error"))
+
+        r = await bridge_send(ws, "mouseUpCDP", tabId=tab_id, x=cx, y=cy, button="left")
+        if r.get("success"):
+            results.ok("mouseUpCDP succeeded")
+        else:
+            results.fail("mouseUpCDP", r.get("error"))
+
+        # 6. mouseDragCDP — drag from one point to another
+        end_x = cx + 100
+        end_y = cy + 50
+        r = await bridge_send(ws, "mouseDragCDP", tabId=tab_id,
+                              startX=cx, startY=cy, endX=end_x, endY=end_y,
+                              steps=10, duration=200)
+        if r.get("success"):
+            results.ok(f"mouseDragCDP succeeded ({cx},{cy}) -> ({end_x},{end_y})")
+        else:
+            results.fail("mouseDragCDP", r.get("error"))
+
+        # 7. mouseWheelCDP — scroll down
+        r = await bridge_send(ws, "mouseWheelCDP", tabId=tab_id,
+                              x=cx, y=cy, deltaX=0, deltaY=300)
+        if r.get("success"):
+            results.ok("mouseWheelCDP (scroll down 300px) succeeded")
+        else:
+            results.fail("mouseWheelCDP", r.get("error"))
+
+    except AssertionError as e:
+        results.fail("Mouse CDP", str(e))
+    except Exception as e:
+        results.fail("Mouse CDP", str(e))
+    finally:
+        await ws.close()
+
+
 # ==========================================
 # Runner
 # ==========================================
@@ -1750,6 +1832,7 @@ async def run_all_tests():
     await test_keyboard(results)
     await test_scrolling(results)
     await test_hover(results)
+    await test_mouse_cdp(results)
 
     # JavaScript
     await test_evaluate_with_tab_id(results)

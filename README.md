@@ -2,13 +2,13 @@
 
 **Undetectable browser automation via a Manifest V3 extension.**
 
-StealthDOM replaces Playwright/Puppeteer by controlling the browser **from inside** — as a native extension, not through CDP. Zero detection signals. Works on Cloudflare, DataDome, Facebook, Instagram, Gmail, and any site that blocks traditional automation.
+StealthDOM replaces Playwright/Puppeteer by controlling the browser **from inside** — as a native Manifest V3 extension. Zero detection signals. Works on Cloudflare, DataDome, Facebook, Instagram, Gmail, and any site that blocks traditional automation.
 
 ## How It Works
 
 StealthDOM can be used in two ways:
 
-**AI Agents** connect via the MCP protocol — 51 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
+**AI Agents** connect via the MCP protocol — 57 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
 
 **Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
 
@@ -43,7 +43,7 @@ The **content script** is injected **on-demand** into tabs only when the first c
 |---|---|---|
 | `navigator.webdriver` | `true` (detected) | `false` (natural) |
 | TLS fingerprint | Synthetic | Real browser |
-| CDP artifacts | Present (detectable) | None |
+| CDP artifacts | Present (detectable) | Extension-only (via `chrome.debugger` permission, not `--remote-debugging-port`) |
 | Cloudflare/DataDome | Frequently blocked | ✅ Passes |
 | User sessions | Must re-login | ✅ Uses existing |
 | Bot risk score | Varies | **0/100** |
@@ -62,7 +62,7 @@ StealthDOM has been tested against major bot detection suites:
 
 ## Features
 
-- **51 MCP tools**: DOM queries, clicks, typing, scrolling, keyboard, hover, drag-and-drop, navigation, cookies, screenshots, JS execution, network capture, proxy fetch, tab/window management
+- **57 MCP tools**: DOM queries, clicks, typing, scrolling, keyboard, hover, drag-and-drop, native CDP mouse (move, click, drag, wheel), navigation, cookies, screenshots, JS execution, network capture, proxy fetch, tab/window management
 - **Multi-browser support**: Connect Chrome, Brave, and Edge simultaneously — tabs from all browsers shown in one unified list
 - **Virtual tab IDs**: Namespaced as `"label:tabId"` (e.g., `"brave:12345"`) for transparent multi-browser routing
 - **Window management**: Open regular or incognito windows, resize, close
@@ -72,13 +72,19 @@ StealthDOM has been tested against major bot detection suites:
 - **JavaScript execution**: Arbitrary JS in page context — works on ALL sites including YouTube/Gmail (CSP headers auto-stripped)
 - **Network capture**: Circular buffer (5,000 entries) with overflow detection
 - **Proxy Fetch**: Route HTTP requests through the browser's real TLS fingerprint and cookies
-- **MCP integration**: Full MCP server with 51 tools, instructions, and capabilities resource
+- **MCP integration**: Full MCP server with 57 tools, instructions, and capabilities resource
 - **Cross-frame DOM access**: Target elements inside iframes and framesets via `frame_id` — works on Gmail, OAuth dialogs, payment widgets
 - **Explicit targeting**: All commands target tabs by ID — safe for multi-window, multi-agent use
 - **On-demand injection**: Content script only loads in tabs you actually use — zero overhead on untouched tabs
 - **Enable/Disable toggle**: Click the extension icon to globally enable/disable (restores site security when not in use)
 
 ## Quick Start
+
+### One-Click Install (Windows)
+
+Double-click **`install.bat`** — it handles everything: Python, dependencies, browser configuration, extension loading, bridge startup, and MCP setup for your IDE. To uninstall, double-click **`uninstall.bat`**.
+
+### Manual Install
 
 1. **Load extension** in any Chromium browser (Chrome, Brave, Edge, etc.):  
    Open the extensions page (`chrome://extensions` or `brave://extensions`) → Developer Mode → Load Unpacked → select `extension/`

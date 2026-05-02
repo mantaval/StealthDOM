@@ -10,7 +10,7 @@
 ::   del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\start_bridge.bat"
 
 title StealthDOM Bridge
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 echo [StealthDOM] Starting bridge server...
 echo [StealthDOM] Press Ctrl+C to stop.

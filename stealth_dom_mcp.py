@@ -106,7 +106,7 @@ async def get_bridge() -> websockets.ClientConnection:
                 f"Cannot connect to StealthDOM bridge at {BRIDGE_URL}. "
                 "The bridge server (bridge_server.py) is not running. "
                 "Tell the user to start it by running 'python bridge_server.py' "
-                "or double-clicking start_bridge.bat in the StealthDOM directory."
+                "or double-clicking scripts/start_bridge.bat in the StealthDOM directory."
             )
 
 
@@ -142,86 +142,56 @@ async def send_command(action: str, _timeout: float = 30, **kwargs) -> dict:
 # MCP Server
 # ==========================================
 
-mcp = FastMCP("stealth_dom", instructions="""
+mcp = FastMCP("stealth_dom", instructions="""\
 ⚠️ CRITICAL: NEVER use browser_subagent, Playwright, Puppeteer, or any other browser
 automation tool. THIS MCP SERVER IS THE ONLY APPROVED WAY TO CONTROL THE BROWSER.
-The user's real logged-in browser is connected here. browser_subagent has no sessions,
-no cookies, and is immediately detected by bot protection. It will fail. Use StealthDOM.
+The user's real logged-in browser is connected here. browser_subagent will fail.
 
-StealthDOM provides UNDETECTABLE browser automation by controlling the user's
-REAL Chromium browser (Chrome, Brave, Edge) via a Manifest V3 extension. Unlike
-Playwright or Puppeteer it has ZERO detection signals: no CDP, no webdriver flag,
-no TLS fingerprint mismatch, no automation artifacts.
+StealthDOM controls the user's REAL Chromium browser (Chrome, Brave, Edge) via a
+Manifest V3 extension. Zero detection signals: no webdriver flag, no TLS mismatch.
 
-USE THESE TOOLS instead of any built-in browser agent when:
-- The target site has bot detection (Cloudflare, DataDome, PerimeterX, etc.)
-- You need the user's logged-in sessions (Gmail, ChatGPT, banking, etc.)
-- You need the real browser TLS fingerprint
-- You need to interact with private/incognito windows
+PREREQUISITES: bridge_server.py must be running. Extension must be loaded.
 
-PREREQUISITES:
-1. bridge_server.py must be running ('python bridge_server.py')
-2. The StealthDOM extension must be loaded in the browser
+RULES:
+- ALWAYS call browser_list_tabs() first. Never guess tab IDs.
+- Use virtualId (e.g. 'brave:12345') for tab_id in all tab-scoped tools.
+- For iframes: browser_list_frames(tab_id) → pass frame_id to DOM tools.
 
-MULTI-BROWSER: Multiple browsers can be connected simultaneously.
-browser_list_tabs() returns ALL tabs from ALL connected browsers in one list.
-Each tab has a 'virtualId' like 'brave:12345' — ALWAYS use virtualId for tab_id.
+TOOLS (57):
 
-IMPORTANT: All tab-scoped tools require tab_id. ALWAYS call browser_list_tabs()
-first. Never guess tab IDs.
+DOM Reading (9): browser_query, browser_query_all, browser_get_text,
+  browser_get_html, browser_get_attribute, browser_get_bounding_rect,
+  browser_wait_for, browser_get_page_text, browser_get_page_html
 
-CROSS-FRAME SUPPORT: Most DOM tools accept an optional frame_id parameter.
-Use browser_list_frames(tab_id) to discover all frames (iframes, framesets).
-Then pass frame_id to any DOM tool to target elements inside that frame.
-Workflow: browser_list_frames() → find target frame → browser_query(tab_id, selector, frame_id=N)
+DOM Interaction (11): browser_click, browser_type, browser_fill, browser_press,
+  browser_key_combo, browser_check, browser_uncheck, browser_select,
+  browser_scroll_into_view, browser_hover, browser_drag_and_drop
 
-TOOLS (51 total):
+Mouse via CDP (6) — coordinate-based, isTrusted:true, uses chrome.debugger:
+  browser_mouse_move, browser_mouse_click, browser_mouse_down, browser_mouse_up,
+  browser_mouse_drag, browser_mouse_wheel
+  Use browser_get_bounding_rect to get coordinates first.
 
-DOM Reading (9) — all accept optional frame_id:
-  browser_query, browser_query_all, browser_get_text, browser_get_html,
-  browser_get_attribute, browser_get_bounding_rect, browser_wait_for,
-  browser_get_page_text, browser_get_page_html
-
-DOM Interaction (11) — all accept optional frame_id:
-  browser_click, browser_type, browser_fill, browser_press, browser_key_combo,
-  browser_check, browser_uncheck, browser_select, browser_scroll_into_view,
-  browser_hover, browser_drag_and_drop
-
-Navigation (5):
-  browser_navigate, browser_back, browser_forward, browser_reload,
-  browser_wait_for_url
+Navigation (6): browser_navigate, browser_back, browser_forward, browser_reload,
+  browser_scroll_to, browser_wait_for_url
 
 Page Info (2): browser_get_url, browser_get_title
 
-Tab Management (4):
-  browser_list_tabs, browser_new_tab, browser_close_tab, browser_switch_tab
+Tab/Window (9): browser_list_tabs, browser_new_tab, browser_close_tab,
+  browser_switch_tab, browser_list_windows, browser_new_window,
+  browser_new_incognito_window, browser_close_window, browser_resize_window
 
-Window Management (5):
-  browser_new_window, browser_new_incognito_window, browser_list_windows,
-  browser_close_window, browser_resize_window
+Screenshots (2): browser_screenshot, browser_screenshot_full_page
 
-Screenshots (2):
-  browser_screenshot, browser_screenshot_full_page (scroll-and-stitch)
+Cookies (3): browser_get_cookies, browser_set_cookie, browser_delete_cookie
 
-Cookies (3):
-  browser_get_cookies, browser_set_cookie, browser_delete_cookie
-
-Network Capture (3):
-  browser_start_net_capture, browser_stop_net_capture, browser_get_net_capture
-  Note: get_net_capture returns {requests, overflowCount, bufferSize} —
-  check overflowCount > 0 to know if any traffic was missed (circular buffer, 5000 cap)
+Network (3): browser_start_net_capture, browser_stop_net_capture,
+  browser_get_net_capture
 
 JavaScript (1): browser_evaluate (MAIN or ISOLATED world)
-
-File Upload (1): browser_upload_file
-Proxy Fetch (1): browser_proxy_fetch (real browser TLS fingerprint)
+Frames (2): browser_list_frames, browser_evaluate_all_frames
+File/Fetch (2): browser_upload_file, browser_proxy_fetch
 Connections (1): browser_list_connections
-
-Frame Support (2):
-  browser_list_frames, browser_evaluate_all_frames
-  Note: Use browser_list_frames to discover frame IDs, then pass frame_id to any
-  DOM reading/interaction tool. For JS execution across all frames simultaneously,
-  use browser_evaluate_all_frames.
 """)
 
 
@@ -232,7 +202,8 @@ Frame Support (2):
 @mcp.resource("stealth://capabilities")
 def get_capabilities() -> str:
     """Full capability reference for StealthDOM."""
-    return """# StealthDOM Capabilities
+    return """\
+# StealthDOM Capabilities
 
 ## Architecture
 
@@ -241,113 +212,109 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 - Port 9877: Extension connects (multiple browsers supported simultaneously)
 - Port 9878: MCP server / control clients connect
 - Tab IDs are virtualised as "label:tabId" (e.g. "brave:12345") for multi-browser routing
-- browser_list_tabs() aggregates ALL tabs from ALL connected browsers in one flat list
-- Content scripts are injected ON-DEMAND via chrome.scripting.executeScript (allFrames: true) when the first command targets a tab — NOT declared in manifest.json (saves memory on untouched tabs)
+- Content scripts are injected ON-DEMAND via chrome.scripting.executeScript when the first command targets a tab
 
-## Why StealthDOM over Playwright?
+## Why StealthDOM?
 
-| Aspect | Playwright | StealthDOM |
-|--------|-----------|------------|
-| Detection risk | HIGH — CDP, webdriver flag, TLS mismatch | ZERO — native browser citizen |
+| Aspect | Playwright/Puppeteer | StealthDOM |
+|--------|---------------------|------------|
+| Detection risk | HIGH — webdriver flag, TLS mismatch | ZERO — real browser |
 | Cloudflare/DataDome | Frequently blocked | Never blocked |
-| User sessions | Must re-authenticate | Uses existing logged-in sessions |
-| TLS fingerprint | Synthetic (detectable) | Real browser (identical to human) |
+| User sessions | Must re-authenticate | Uses existing sessions |
+| TLS fingerprint | Synthetic (detectable) | Real (identical to human) |
 
-## Cross-Frame Support
+## Tool Reference (57 total)
 
-All DOM reading and interaction tools accept an optional `frame_id` parameter.
-This enables targeting elements inside iframes and framesets (Gmail, OAuth dialogs, payment widgets).
+### DOM Reading (9) — accept optional frame_id
+- browser_query — single element by CSS selector
+- browser_query_all — multiple elements (with limit)
+- browser_get_text — inner text of element
+- browser_get_html — outer HTML (with max_length)
+- browser_get_attribute — specific attribute value
+- browser_get_bounding_rect — position and size (use for Mouse CDP coordinates)
+- browser_wait_for — poll for element appearance (timeout)
+- browser_get_page_text — full page visible text
+- browser_get_page_html — full page HTML source
 
-**Workflow:**
-1. `browser_list_frames(tab_id)` → discover all frames (returns frameId, URL, elementCount per frame)
-2. Pass `frame_id=N` to any DOM tool → targets that specific frame
-3. Omit `frame_id` → targets top-level frame (default, backward compatible)
+### DOM Interaction (11) — accept optional frame_id
+- browser_click — click element (auto-scrolls into view)
+- browser_type — append text to input/contenteditable
+- browser_fill — clear and set value (triggers React onChange)
+- browser_press — single key press (Enter, Tab, Escape, etc.)
+- browser_key_combo — key combination (comma-separated: 'Control,Shift,d')
+- browser_check / browser_uncheck — checkbox toggle
+- browser_select — dropdown option by value
+- browser_scroll_into_view — scroll element to center of viewport
+- browser_hover — triggers mouseenter, mouseover, mousemove
+- browser_drag_and_drop — HTML5 Drag API (selector-based)
 
-## Available Tools (46)
+### Mouse via CDP (6) — coordinate-based, isTrusted:true
+Uses chrome.debugger + Input.dispatchMouseEvent for native system-level events.
+Use browser_get_bounding_rect to get target coordinates.
+- browser_mouse_move — interpolated trajectory with jitter (steps, duration)
+- browser_mouse_click — left/right/middle, single/double-click
+- browser_mouse_down — press and hold
+- browser_mouse_up — release
+- browser_mouse_drag — full drag: down → move × N → up (single debugger session)
+- browser_mouse_wheel — native scroll at coordinates (delta_x, delta_y)
 
-### DOM Reading (9) — all accept optional frame_id
-- `browser_query(tab_id, selector, frame_id=None)` — Query single element
-- `browser_query_all(tab_id, selector, limit=0, frame_id=None)` — Query multiple elements
-- `browser_get_text(tab_id, selector, frame_id=None)` — Inner text
-- `browser_get_html(tab_id, selector, max_length=0, frame_id=None)` — Outer HTML
-- `browser_get_attribute(tab_id, selector, attribute, frame_id=None)` — Element attribute
-- `browser_get_bounding_rect(tab_id, selector, frame_id=None)` — Position and size
-- `browser_wait_for(tab_id, selector, timeout=10000, frame_id=None)` — Wait for element
-- `browser_get_page_text(tab_id, max_length=0, frame_id=None)` — Full page text (0 = no limit)
-- `browser_get_page_html(tab_id, max_length=0, frame_id=None)` — Full page HTML
+### Navigation (6)
+- browser_navigate — go to URL
+- browser_back / browser_forward — history navigation
+- browser_reload — reload page
+- browser_scroll_to — scroll to pixel coordinates (x, y)
+- browser_wait_for_url — wait for URL to match pattern (substring or regex)
 
-### DOM Interaction (11) — all accept optional frame_id
-- `browser_click(tab_id, selector, frame_id=None)` — Click (auto-scrolls into view)
-- `browser_type(tab_id, selector, text, frame_id=None)` — Type/append text
-- `browser_fill(tab_id, selector, value, frame_id=None)` — Clear and fill
-- `browser_press(tab_id, key, frame_id=None)` — Single key press
-- `browser_key_combo(tab_id, keys, frame_id=None)` — Key combo (comma-separated: 'Control,Shift,d')
-- `browser_check(tab_id, selector, frame_id=None)` — Check checkbox
-- `browser_uncheck(tab_id, selector, frame_id=None)` — Uncheck checkbox
-- `browser_select(tab_id, selector, value, frame_id=None)` — Select dropdown option
-- `browser_scroll_into_view(tab_id, selector, frame_id=None)` — Scroll element into view
-- `browser_hover(tab_id, selector, frame_id=None)` — Hover (mouseenter/mouseover/mousemove)
-- `browser_drag_and_drop(tab_id, source_selector, target_selector, frame_id=None)` — HTML5 drag-drop
-
-### Navigation (5)
-- `browser_navigate(tab_id, url)` — Navigate to URL
-- `browser_back(tab_id)` — Go back
-- `browser_forward(tab_id)` — Go forward
-- `browser_reload(tab_id)` — Reload page
-- `browser_wait_for_url(tab_id, pattern, timeout=10000)` — Wait for URL match
-
-### Page Info (3)
-- `browser_get_url(tab_id)` — Current URL
-- `browser_get_title(tab_id)` — Page title
-- `browser_get_page_text(tab_id)` — Full page visible text
+### Page Info (2)
+- browser_get_url — current URL
+- browser_get_title — page title
 
 ### Tab Management (4)
-- `browser_list_tabs()` — All tabs from all browsers (virtualId, url, title, active, browserId)
-- `browser_new_tab(url='about:blank')` — Open new tab
-- `browser_close_tab(tab_id)` — Close tab
-- `browser_switch_tab(tab_id)` — Activate tab
+- browser_list_tabs — all tabs from all connected browsers
+- browser_new_tab — open new tab
+- browser_close_tab — close tab
+- browser_switch_tab — activate tab and focus window
 
 ### Window Management (5)
-- `browser_new_window(url='about:blank')` — New window (with session)
-- `browser_new_incognito_window(url='about:blank')` — New private window
-- `browser_list_windows()` — All windows
-- `browser_close_window(window_id)` — Close window
-- `browser_resize_window(window_id, width, height)` — Resize
+- browser_new_window — new window with user session
+- browser_new_incognito_window — new private window (clean session)
+- browser_list_windows — all windows with sizes
+- browser_close_window — close window and all its tabs
+- browser_resize_window — resize window
 
 ### Screenshots (2)
-- `browser_screenshot(tab_id, save_path=None)` — Visible area PNG
-- `browser_screenshot_full_page(tab_id, max_height=20000, save_path=None)` — Full scroll-stitch PNG
+- browser_screenshot — visible viewport PNG (CDP capture, no focus stealing)
+- browser_screenshot_full_page — full-page scroll-stitch PNG
 
 ### Cookies (3)
-- `browser_get_cookies(url)` — Get all cookies for URL
-- `browser_set_cookie(url, name, value, domain=None, path=None, secure=None, http_only=None, expiration_date=None)` — Set cookie
-- `browser_delete_cookie(url, name)` — Delete cookie
+- browser_get_cookies — all cookies for a URL
+- browser_set_cookie — set with optional domain/path/secure/httpOnly/expiry
+- browser_delete_cookie — delete by URL + name
 
 ### Network Capture (3)
-- `browser_start_net_capture()` — Start capturing requests/responses (resets buffer)
-- `browser_stop_net_capture()` — Stop capture
-- `browser_get_net_capture()` — Returns {requests, overflowCount, bufferSize, capturedCount}
-  WARNING: If overflowCount > 0, some early requests were overwritten (circular buffer, 5000 cap)
+- browser_start_net_capture — start recording requests/responses
+- browser_stop_net_capture — stop recording
+- browser_get_net_capture — retrieve captured data (5000 entry circular buffer)
 
 ### JavaScript (1)
-- `browser_evaluate(tab_id, code, world='MAIN')` — Arbitrary JS. world='ISOLATED' for chrome.runtime access
+- browser_evaluate — execute JS in MAIN or ISOLATED world
+
+### Frames (2)
+- browser_list_frames — discover iframes/framesets in a tab
+- browser_evaluate_all_frames — run JS in ALL frames at once
 
 ### File & Fetch (2)
-- `browser_upload_file(tab_id, selector, data_url)` — Set file on input[type=file]
-- `browser_proxy_fetch(tab_id, url, method='GET', headers=None, body=None, body_type='json')` — Fetch via real browser (real TLS fingerprint + cookies)
+- browser_upload_file — set file on input[type=file] via data URL
+- browser_proxy_fetch — HTTP request through browser's real TLS fingerprint + cookies
 
 ### Connections (1)
-- `browser_list_connections()` — Show connected browsers and their labels
-
-### Frame Support (2)
-- `browser_list_frames(tab_id)` — List all frames in a tab (frameId, URL, elementCount, hasBody per frame)
-- `browser_evaluate_all_frames(tab_id, code, world='MAIN')` — Execute JS in ALL frames, returns per-frame results
+- browser_list_connections — list connected browsers
 
 ## Tips
-- To focus/blur an element: use browser_evaluate with 'document.querySelector("#id").focus()'
-- To double-click: use browser_evaluate with el.dispatchEvent(new MouseEvent('dblclick', {bubbles:true}))
-- For JS frameworks (React/Vue): browser_fill uses native value setter to trigger onChange
-- For cross-frame access: browser_list_frames → get frameId → pass frame_id to any DOM tool
+- For iframes: browser_list_frames → get frameId → pass frame_id to any DOM tool
+- For React/Vue: browser_fill uses native value setter to trigger onChange
+- For native mouse: browser_get_bounding_rect → browser_mouse_* tools
+- For focus/blur: browser_evaluate('document.querySelector("#id").focus()')
 """
 
 
@@ -688,14 +655,134 @@ async def browser_drag_and_drop(tab_id: int | str, source_selector: str, target_
 
 
 # ==========================================
+# Mouse Tools (CDP)
+# ==========================================
+
+@mcp.tool()
+async def browser_mouse_move(tab_id: int | str, x: int, y: int, steps: int = 10, duration: int = 300) -> str:
+    """Move mouse to coordinates via CDP (chrome.debugger + Input.dispatchMouseEvent).
+    Produces isTrusted: true events. Interpolates movement with random jitter for realism.
+    Use browser_get_bounding_rect to get target coordinates.
+
+    Args:
+        tab_id: ID of the tab (get from browser_list_tabs)
+        x: Target X coordinate (viewport pixels)
+        y: Target Y coordinate (viewport pixels)
+        steps: Number of intermediate points in the trajectory (default 10)
+        duration: Total movement time in milliseconds (default 300)
+    """
+    result = await send_command("mouseMoveCDP", tabId=tab_id, x=x, y=y, steps=steps, duration=duration,
+                                _timeout=max(30, duration / 1000 + 10))
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+@mcp.tool()
+async def browser_mouse_click(tab_id: int | str, x: int, y: int, button: str = "left", click_count: int = 1) -> str:
+    """Click at coordinates via CDP (chrome.debugger + Input.dispatchMouseEvent).
+    Produces isTrusted: true events. Supports left/right/middle and double-click.
+    Use browser_get_bounding_rect to get target coordinates.
+
+    Args:
+        tab_id: ID of the tab (get from browser_list_tabs)
+        x: Click X coordinate (viewport pixels)
+        y: Click Y coordinate (viewport pixels)
+        button: Mouse button — 'left', 'right', or 'middle' (default 'left')
+        click_count: 1 for single click, 2 for double-click (default 1)
+    """
+    result = await send_command("mouseClickCDP", tabId=tab_id, x=x, y=y, button=button, clickCount=click_count)
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+@mcp.tool()
+async def browser_mouse_down(tab_id: int | str, x: int, y: int, button: str = "left") -> str:
+    """Press and hold mouse button at coordinates via CDP (chrome.debugger + Input.dispatchMouseEvent).
+    Produces isTrusted: true events. Use with browser_mouse_up for atomic hold/release.
+
+    Args:
+        tab_id: ID of the tab (get from browser_list_tabs)
+        x: Press X coordinate (viewport pixels)
+        y: Press Y coordinate (viewport pixels)
+        button: Mouse button — 'left', 'right', or 'middle' (default 'left')
+    """
+    result = await send_command("mouseDownCDP", tabId=tab_id, x=x, y=y, button=button)
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+@mcp.tool()
+async def browser_mouse_up(tab_id: int | str, x: int, y: int, button: str = "left") -> str:
+    """Release mouse button at coordinates via CDP (chrome.debugger + Input.dispatchMouseEvent).
+    Produces isTrusted: true events. Completes a hold started by browser_mouse_down.
+
+    Args:
+        tab_id: ID of the tab (get from browser_list_tabs)
+        x: Release X coordinate (viewport pixels)
+        y: Release Y coordinate (viewport pixels)
+        button: Mouse button — 'left', 'right', or 'middle' (default 'left')
+    """
+    result = await send_command("mouseUpCDP", tabId=tab_id, x=x, y=y, button=button)
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+@mcp.tool()
+async def browser_mouse_drag(tab_id: int | str, start_x: int, start_y: int, end_x: int, end_y: int,
+                              steps: int = 20, duration: int = 500) -> str:
+    """Drag from one point to another via CDP (chrome.debugger + Input.dispatchMouseEvent).
+    Produces isTrusted: true events. Executes a full native drag sequence: move to start,
+    press, interpolated move to end, release — all in a single debugger session.
+    Use browser_get_bounding_rect to get coordinates for source and target elements.
+
+    Args:
+        tab_id: ID of the tab (get from browser_list_tabs)
+        start_x: Drag start X coordinate (viewport pixels)
+        start_y: Drag start Y coordinate (viewport pixels)
+        end_x: Drag end X coordinate (viewport pixels)
+        end_y: Drag end Y coordinate (viewport pixels)
+        steps: Number of intermediate movement points (default 20)
+        duration: Total drag time in milliseconds (default 500)
+    """
+    result = await send_command("mouseDragCDP", tabId=tab_id, startX=start_x, startY=start_y,
+                                endX=end_x, endY=end_y, steps=steps, duration=duration,
+                                _timeout=max(30, duration / 1000 + 10))
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+@mcp.tool()
+async def browser_mouse_wheel(tab_id: int | str, x: int, y: int, delta_x: int = 0, delta_y: int = 0) -> str:
+    """Dispatch a native scroll wheel event via CDP (chrome.debugger + Input.dispatchMouseEvent).
+    Produces isTrusted: true events. Scrolls at the specified coordinates.
+
+    Args:
+        tab_id: ID of the tab (get from browser_list_tabs)
+        x: Wheel event X coordinate (viewport pixels)
+        y: Wheel event Y coordinate (viewport pixels)
+        delta_x: Horizontal scroll amount in pixels (default 0)
+        delta_y: Vertical scroll amount in pixels (positive = scroll down, default 0)
+    """
+    result = await send_command("mouseWheelCDP", tabId=tab_id, x=x, y=y, deltaX=delta_x, deltaY=delta_y)
+    if not result.get("success"):
+        return f"Error: {result.get('error')}"
+    return json.dumps(result.get("data"), indent=2)
+
+
+# ==========================================
 # Navigation Tools
 # ==========================================
 
 # Note: browser_focus, browser_blur, browser_double_click were removed.
-# Use browser_evaluate() for these trivial operations:
+# Use browser_evaluate() for focus/blur, and browser_mouse_click for double-click:
 #   focus:        browser_evaluate(tab_id, 'document.querySelector("#id").focus()')
 #   blur:         browser_evaluate(tab_id, 'document.querySelector("#id").blur()')
-#   double-click: browser_evaluate(tab_id, 'document.querySelector("#id").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))')
+#   double-click: browser_mouse_click(tab_id, x, y, click_count=2)
 
 @mcp.tool()
 async def browser_navigate(tab_id: int | str, url: str) -> str:
@@ -850,6 +937,7 @@ async def browser_get_page_html(tab_id: int | str, max_length: int = 0, frame_id
 @mcp.tool()
 async def browser_screenshot(tab_id: int | str, save_path: str | None = None) -> str:
     """Take a screenshot of the specified tab. Returns base64 PNG data URL.
+    If save_path is provided, saves to disk instead and returns the file path.
     
     Uses CDP (chrome.debugger) for silent capture — no window focus stealing,
     no tab activation, no rate limits. Falls back to captureVisibleTab if CDP
@@ -880,6 +968,7 @@ async def browser_screenshot(tab_id: int | str, save_path: str | None = None) ->
 @mcp.tool()
 async def browser_screenshot_full_page(tab_id: int | str, max_height: int = 20000, save_path: str | None = None) -> str:
     """Take a full-page screenshot by scrolling and stitching viewport captures.
+    If save_path is provided, saves to disk instead and returns the file path.
     Captures the entire document, not just the visible area. Sticky/fixed elements
     are automatically hidden during middle frames to avoid duplication.
     

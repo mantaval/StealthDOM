@@ -106,13 +106,6 @@
             case 'keyCombo':
                 return await cmdKeyCombo(msg.keys);
 
-            // === Mouse ===
-            case 'mouseClick':
-                return cmdMouseClick(msg.x, msg.y, msg.button);
-            case 'mouseMove':
-                return cmdMouseMove(msg.x, msg.y);
-            case 'mouseWheel':
-                return cmdMouseWheel(msg.deltaX, msg.deltaY);
 
             // === Page Info ===
             case 'getURL':
@@ -507,34 +500,6 @@
         return { success: true };
     }
 
-    // ==========================================
-    // Mouse Commands (coordinate-based)
-    // ==========================================
-
-    function cmdMouseClick(x, y, button = 'left') {
-        const buttonCode = button === 'right' ? 2 : button === 'middle' ? 1 : 0;
-        const el = document.elementFromPoint(x, y);
-        const target = el || document;
-
-        target.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, button: buttonCode, bubbles: true }));
-        target.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y, button: buttonCode, bubbles: true }));
-        target.dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, button: buttonCode, bubbles: true }));
-        return { success: true, data: { element: el ? el.tagName : null } };
-    }
-
-    function cmdMouseMove(x, y) {
-        const el = document.elementFromPoint(x, y);
-        const target = el || document;
-        target.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
-        return { success: true };
-    }
-
-    function cmdMouseWheel(deltaX, deltaY) {
-        document.dispatchEvent(new WheelEvent('wheel', {
-            deltaX: deltaX || 0, deltaY: deltaY || 0, bubbles: true,
-        }));
-        return { success: true };
-    }
 
     // ==========================================
     // Advanced Commands

@@ -5,6 +5,27 @@
 
 ---
 
+## Quick Install (Windows)
+
+Double-click **`install.bat`** in the StealthDOM folder. It will automatically:
+
+1. Check for Python 3.10+ and install it if missing
+2. Install Python dependencies (`websockets`, `mcp`)
+3. Set up the bridge server to start automatically on login
+4. Start the bridge server right now
+
+**Important:** The installer does *not* automatically inject extensions into your browser or add MCP settings to your IDE. You must complete those steps manually below.
+
+### Uninstall
+
+Double-click **`uninstall.bat`** to cleanly reverse backend changes. This stops the bridge and removes the auto-start task. Python, pip packages, browser extensions, and IDE MCP configs must be removed manually.
+
+---
+
+## Manual Install
+
+> The following steps describe the full manual installation process. If you used `install.bat` above, you can skip to [Step 2: Load the Browser Extension](#step-2-load-the-browser-extension).
+
 ## Prerequisites
 
 - **Python 3.10+** with `pip`
@@ -18,7 +39,7 @@
 ### Clone or download the project
 
 ```bash
-git clone https://github.com/mantaval/StealthDOM.git
+git clone https://github.com/CodeGenIQ/StealthDOM.git
 cd StealthDOM
 ```
 
@@ -94,15 +115,15 @@ Press `Ctrl+C` to stop.
 
 ### Option B: One-click start (Windows only)
 
-Double-click **`start_bridge.bat`** in the StealthDOM folder. This opens a terminal window with the bridge running. If it crashes, it automatically prompts to restart.
+Double-click **`scripts/start_bridge.bat`** in the StealthDOM folder. This opens a terminal window with the bridge running. If it crashes, it automatically prompts to restart.
 
 ### Option C: Auto-start on login (Windows only)
 
-Right-click **`windows_startup_install.bat`** → **Run as administrator**
+Right-click **`scripts/windows_startup_install.bat`** → **Run as administrator**
 
 This creates a Windows Task Scheduler task that starts the bridge silently on login using `pythonw` (Python's windowless interpreter — no terminal window).
 
-To remove it, right-click **`windows_startup_uninstall.bat`** → **Run as administrator**
+To remove it, right-click **`scripts/windows_startup_uninstall.bat`** → **Run as administrator**
 
 > **macOS/Linux:** To auto-start on other platforms, use your system's native
 > mechanism (`launchd` on macOS, `systemd` on Linux) to run
@@ -139,7 +160,7 @@ Once the bridge is running and you have a browser tab open:
 
 ## Step 5: Configure MCP for AI Agents
 
-StealthDOM includes a full MCP (Model Context Protocol) server that exposes all 51 commands as tools for AI agents. Below are setup instructions for popular AI-powered IDEs.
+StealthDOM includes a full MCP (Model Context Protocol) server that exposes all 57 commands as tools for AI agents. Below are setup instructions for popular AI-powered IDEs.
 
 ### General MCP Configuration
 
@@ -340,13 +361,15 @@ For the full command reference, see [API Reference](03_api_reference.md).
 
 | File | Purpose |
 |------|---------|
+| **`install.bat`** | **One-click installer (recommended)** — sets up everything automatically |
+| **`uninstall.bat`** | **One-click uninstaller** — cleanly reverses all changes |
 | `bridge_server.py` | WebSocket relay server (ports 9877 + 9878) |
 | `stealth_dom_mcp.py` | MCP server wrapping all commands as AI agent tools |
 | `extension/` | Browser extension (background.js, content_script.js, manifest.json) |
 | `tests/test_stealth_dom.py` | Integration test suite |
-| `start_bridge.bat` | One-click bridge startup with auto-restart (Windows) |
-| `windows_startup_install.bat` | Install bridge as Windows auto-start task (right-click → Run as admin) |
-| `windows_startup_uninstall.bat` | Remove the auto-start task (right-click → Run as admin) |
+| `scripts/start_bridge.bat` | Manual bridge startup with auto-restart (Windows) |
+| `scripts/windows_startup_install.bat` | Manual bridge auto-start setup (right-click → Run as admin) |
+| `scripts/windows_startup_uninstall.bat` | Manual auto-start removal (right-click → Run as admin) |
 | `docs/` | Full documentation |
 
 ---

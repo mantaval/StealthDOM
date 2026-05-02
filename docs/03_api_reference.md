@@ -239,7 +239,7 @@ Double-click a DOM element. Element is scrolled into view first.
 ```json
 { "action": "dblclick", "selector": ".item" }
 ```
-**MCP Tool:** *WebSocket only — use `browser_evaluate` for double-click*  
+**MCP Tool:** *WebSocket only — use `browser_mouse_click(tab_id, x, y, click_count=2)` for double-click*  
 **Handled by:** Content Script
 
 ---
@@ -415,54 +415,131 @@ Press a keyboard shortcut (key combination).
 
 ---
 
-## Mouse (Coordinate-Based)
+## Mouse (CDP)
 
-### mouseClick
-Click at specific screen coordinates.
+These commands use `chrome.debugger` + `Input.dispatchMouseEvent` to produce **native system-level
+mouse events**. All events have `isTrusted: true`, making them indistinguishable from real user input.
+Use `getBoundingRect` to get coordinates for a target element.
+
+> **Handled by:** Background (CDP — `chrome.debugger` + `Input.dispatchMouseEvent`)
+
+### mouseMoveCDP
+Move the mouse to specific coordinates with interpolated trajectory and random jitter.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `x` | integer | ✅ | — | X coordinate |
-| `y` | integer | ✅ | — | Y coordinate |
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId) |
+| `x` | integer | ✅ | — | Target X coordinate (viewport pixels) |
+| `y` | integer | ✅ | — | Target Y coordinate (viewport pixels) |
+| `steps` | integer | — | 10 | Number of intermediate points in the trajectory |
+| `duration` | integer | — | 300 | Total movement time in milliseconds |
+
+```json
+{ "action": "mouseMoveCDP", "tabId": 123, "x": 500, "y": 300 }
+{ "action": "mouseMoveCDP", "tabId": 123, "x": 500, "y": 300, "steps": 20, "duration": 500 }
+```
+**MCP Tool:** `browser_mouse_move(tab_id, x, y, steps=10, duration=300)`  
+**Handled by:** Background (CDP)
+
+---
+
+### mouseClickCDP
+Click at specific coordinates. Dispatches mouseMoved → mousePressed → mouseReleased.
+Supports left/right/middle buttons and double-click via clickCount.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tabId` | integer or string | ✅ | — | Tab ID (numeric or virtualId) |
+| `x` | integer | ✅ | — | Click X coordinate |
+| `y` | integer | ✅ | — | Click Y coordinate |
+| `button` | string | — | `left` | `left`, `right`, or `middle` |
+| `clickCount` | integer | — | 1 | 1 for single click, 2 for double-click |
+
+```json
+{ "action": "mouseClickCDP", "tabId": 123, "x": 100, "y": 200 }
+{ "action": "mouseClickCDP", "tabId": 123, "x": 100, "y": 200, "button": "right" }
+{ "action": "mouseClickCDP", "tabId": 123, "x": 100, "y": 200, "clickCount": 2 }
+```
+**MCP Tool:** `browser_mouse_click(tab_id, x, y, button='left', click_count=1)`  
+**Handled by:** Background (CDP)
+
+---
+
+### mouseDownCDP
+Press and hold the mouse button at coordinates. Use with mouseUpCDP for atomic hold/release.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tabId` | integer or string | ✅ | — | Tab ID |
+| `x` | integer | ✅ | — | Press X coordinate |
+| `y` | integer | ✅ | — | Press Y coordinate |
 | `button` | string | — | `left` | `left`, `right`, or `middle` |
 
 ```json
-{ "action": "mouseClick", "x": 100, "y": 200, "button": "left" }
+{ "action": "mouseDownCDP", "tabId": 123, "x": 100, "y": 200 }
 ```
-**MCP Tool:** *WebSocket only*  
-**Handled by:** Content Script
+**MCP Tool:** `browser_mouse_down(tab_id, x, y, button='left')`  
+**Handled by:** Background (CDP)
 
 ---
 
-### mouseMove
-Move the mouse to specific coordinates (dispatches mousemove event).
+### mouseUpCDP
+Release the mouse button at coordinates. Completes a hold started by mouseDownCDP.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `x` | integer | ✅ | — | X coordinate |
-| `y` | integer | ✅ | — | Y coordinate |
+| `tabId` | integer or string | ✅ | — | Tab ID |
+| `x` | integer | ✅ | — | Release X coordinate |
+| `y` | integer | ✅ | — | Release Y coordinate |
+| `button` | string | — | `left` | `left`, `right`, or `middle` |
 
 ```json
-{ "action": "mouseMove", "x": 100, "y": 200 }
+{ "action": "mouseUpCDP", "tabId": 123, "x": 100, "y": 200 }
 ```
-**MCP Tool:** *WebSocket only*  
-**Handled by:** Content Script
+**MCP Tool:** `browser_mouse_up(tab_id, x, y, button='left')`  
+**Handled by:** Background (CDP)
 
 ---
 
-### mouseWheel
-Dispatch a wheel event (scroll).
+### mouseDragCDP
+Full drag sequence: move to start, press, interpolated move to end, release — all in a single
+debugger session (single attach/detach to minimize infobar flash).
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `deltaX` | integer | — | 0 | Horizontal scroll amount |
-| `deltaY` | integer | — | 0 | Vertical scroll amount |
+| `tabId` | integer or string | ✅ | — | Tab ID |
+| `startX` | integer | ✅ | — | Drag start X coordinate |
+| `startY` | integer | ✅ | — | Drag start Y coordinate |
+| `endX` | integer | ✅ | — | Drag end X coordinate |
+| `endY` | integer | ✅ | — | Drag end Y coordinate |
+| `steps` | integer | — | 20 | Number of intermediate movement points |
+| `duration` | integer | — | 500 | Total drag time in milliseconds |
 
 ```json
-{ "action": "mouseWheel", "deltaX": 0, "deltaY": 500 }
+{ "action": "mouseDragCDP", "tabId": 123, "startX": 100, "startY": 200, "endX": 400, "endY": 200 }
+{ "action": "mouseDragCDP", "tabId": 123, "startX": 100, "startY": 200, "endX": 400, "endY": 200, "steps": 30, "duration": 800 }
 ```
-**MCP Tool:** *WebSocket only*  
-**Handled by:** Content Script
+**MCP Tool:** `browser_mouse_drag(tab_id, start_x, start_y, end_x, end_y, steps=20, duration=500)`  
+**Handled by:** Background (CDP)
+
+---
+
+### mouseWheelCDP
+Dispatch a native scroll wheel event at specific coordinates.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tabId` | integer or string | ✅ | — | Tab ID |
+| `x` | integer | ✅ | — | Wheel event X coordinate |
+| `y` | integer | ✅ | — | Wheel event Y coordinate |
+| `deltaX` | integer | — | 0 | Horizontal scroll amount in pixels |
+| `deltaY` | integer | — | 0 | Vertical scroll amount (positive = down) |
+
+```json
+{ "action": "mouseWheelCDP", "tabId": 123, "x": 500, "y": 300, "deltaY": 300 }
+```
+**MCP Tool:** `browser_mouse_wheel(tab_id, x, y, delta_x=0, delta_y=0)`  
+**Handled by:** Background (CDP)
 
 ---
 

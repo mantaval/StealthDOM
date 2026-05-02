@@ -180,7 +180,7 @@ result = await send(ws, "querySelector",
     frameId=frames["data"]["frames"][1]["frameId"])
 ```
 
-For the complete API with all 51 MCP tools and 55+ WebSocket commands, see the [API Reference](03_api_reference.md).
+For the complete API with all 57 MCP tools and WebSocket commands, see the [API Reference](03_api_reference.md).
 
 ---
 

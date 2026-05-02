@@ -402,6 +402,20 @@ async function handleBackgroundCommand(msg) {
         case 'captureFullPageScreenshot':
             return await cmdCaptureFullPageScreenshot(msg.tabId, msg.maxHeight);
 
+        // === Native Mouse (CDP) ===
+        case 'mouseMoveCDP':
+            return await cmdMouseMoveCDP(msg.tabId, msg.x, msg.y, msg.steps, msg.duration);
+        case 'mouseClickCDP':
+            return await cmdMouseClickCDP(msg.tabId, msg.x, msg.y, msg.button, msg.clickCount);
+        case 'mouseDownCDP':
+            return await cmdMouseDownCDP(msg.tabId, msg.x, msg.y, msg.button);
+        case 'mouseUpCDP':
+            return await cmdMouseUpCDP(msg.tabId, msg.x, msg.y, msg.button);
+        case 'mouseDragCDP':
+            return await cmdMouseDragCDP(msg.tabId, msg.startX, msg.startY, msg.endX, msg.endY, msg.steps, msg.duration);
+        case 'mouseWheelCDP':
+            return await cmdMouseWheelCDP(msg.tabId, msg.x, msg.y, msg.deltaX, msg.deltaY);
+
         // === Cookies ===
         case 'getCookies':
             return await cmdGetCookies(msg.url, msg.tabId, msg.storeId);
@@ -581,6 +595,7 @@ async function bridgeRouteCommand(msg) {
         'listTabs', 'newTab', 'closeTab', 'switchTab', 'reloadTab',
         'navigate', 'goBack', 'goForward',
         'captureScreenshot', 'captureFullPageScreenshot',
+        'mouseMoveCDP', 'mouseClickCDP', 'mouseDownCDP', 'mouseUpCDP', 'mouseDragCDP', 'mouseWheelCDP',
         'getCookies', 'setCookie', 'deleteCookie', 'listCookieStores',
         'startNetCapture', 'stopNetCapture', 'getNetCapture', 'clearNetCapture',
         'newWindow', 'newIncognitoWindow', 'listWindows', 'closeWindow', 'resizeWindow',
@@ -1217,6 +1232,298 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
             });
         } catch (_) { /* ignore cleanup errors */ }
         return { success: false, error: `Full-page screenshot failed: ${e.message}` };
+    }
+}
+
+// ==========================================
+// Native Mouse (CDP) — isTrusted: true events
+// ==========================================
+
+/**
+ * Shared helper: attach chrome.debugger, run an async function, detach.
+ * Reuses the same lifecycle pattern as CDP screenshots.
+ * @param {number} tabId
+ * @param {function(target): Promise<any>} fn - receives {tabId} target
+ * @returns {Promise<any>}
+ */
+async function withDebugger(tabId, fn) {
+    const target = { tabId };
+    try {
+        await chrome.debugger.attach(target, '1.3');
+        const result = await fn(target);
+        await chrome.debugger.detach(target);
+        return result;
+    } catch (e) {
+        try { await chrome.debugger.detach(target); } catch (_) {}
+        throw e;
+    }
+}
+
+/**
+ * Map button name to CDP button enum and bitmask.
+ * CDP uses: 'none'=0, 'left'=1, 'middle'=2, 'right'=4 for buttons bitmask
+ * and 'left', 'middle', 'right' for button name.
+ */
+function cdpButtonInfo(button = 'left') {
+    switch (button) {
+        case 'right':  return { button: 'right',  buttons: 2 };
+        case 'middle': return { button: 'middle', buttons: 4 };
+        default:       return { button: 'left',   buttons: 1 };
+    }
+}
+
+/**
+ * Small random jitter for mouse movements (±1-3px).
+ * Makes trajectories look more human.
+ */
+function jitter(val, amount = 2) {
+    return val + (Math.random() * amount * 2 - amount);
+}
+
+/**
+ * CDP mouse move: interpolate from origin (0,0) to (x,y) with realistic steps.
+ * Each intermediate point gets small random jitter.
+ */
+async function cmdMouseMoveCDP(tabId, x, y, steps = 10, duration = 300) {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (x === undefined || y === undefined) return { success: false, error: 'x and y required' };
+
+    try {
+        return await withDebugger(tabId, async (target) => {
+            const stepDelay = Math.max(1, Math.floor(duration / steps));
+
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const cx = i < steps ? jitter(x * t) : x;
+                const cy = i < steps ? jitter(y * t) : y;
+
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: Math.round(cx),
+                    y: Math.round(cy),
+                });
+
+                if (i < steps) {
+                    await new Promise(r => setTimeout(r, stepDelay));
+                }
+            }
+
+            return {
+                success: true,
+                data: { x, y, steps, duration, method: 'cdp' }
+            };
+        });
+    } catch (e) {
+        return { success: false, error: `Mouse move failed: ${e.message}` };
+    }
+}
+
+/**
+ * CDP mouse click: move to coords, press, release.
+ * Supports left/right/middle and double-click via clickCount.
+ */
+async function cmdMouseClickCDP(tabId, x, y, button = 'left', clickCount = 1) {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (x === undefined || y === undefined) return { success: false, error: 'x and y required' };
+
+    const btn = cdpButtonInfo(button);
+
+    try {
+        return await withDebugger(tabId, async (target) => {
+            // Move to position first
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseMoved',
+                x, y,
+            });
+            await new Promise(r => setTimeout(r, 20));
+
+            // Press
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed',
+                x, y,
+                button: btn.button,
+                buttons: btn.buttons,
+                clickCount,
+            });
+            await new Promise(r => setTimeout(r, 30 + Math.random() * 50));
+
+            // Release
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased',
+                x, y,
+                button: btn.button,
+                buttons: 0,
+                clickCount,
+            });
+
+            return {
+                success: true,
+                data: { x, y, button, clickCount, method: 'cdp' }
+            };
+        });
+    } catch (e) {
+        return { success: false, error: `Mouse click failed: ${e.message}` };
+    }
+}
+
+/**
+ * CDP mouse down: press and hold at coordinates.
+ * Use with mouseUpCDP for atomic hold/release scenarios.
+ */
+async function cmdMouseDownCDP(tabId, x, y, button = 'left') {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (x === undefined || y === undefined) return { success: false, error: 'x and y required' };
+
+    const btn = cdpButtonInfo(button);
+
+    try {
+        return await withDebugger(tabId, async (target) => {
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseMoved',
+                x, y,
+            });
+            await new Promise(r => setTimeout(r, 10));
+
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed',
+                x, y,
+                button: btn.button,
+                buttons: btn.buttons,
+                clickCount: 1,
+            });
+
+            return {
+                success: true,
+                data: { x, y, button, method: 'cdp' }
+            };
+        });
+    } catch (e) {
+        return { success: false, error: `Mouse down failed: ${e.message}` };
+    }
+}
+
+/**
+ * CDP mouse up: release button at coordinates.
+ * Completes a hold started by mouseDownCDP.
+ */
+async function cmdMouseUpCDP(tabId, x, y, button = 'left') {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (x === undefined || y === undefined) return { success: false, error: 'x and y required' };
+
+    const btn = cdpButtonInfo(button);
+
+    try {
+        return await withDebugger(tabId, async (target) => {
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased',
+                x, y,
+                button: btn.button,
+                buttons: 0,
+                clickCount: 1,
+            });
+
+            return {
+                success: true,
+                data: { x, y, button, method: 'cdp' }
+            };
+        });
+    } catch (e) {
+        return { success: false, error: `Mouse up failed: ${e.message}` };
+    }
+}
+
+/**
+ * CDP mouse drag: full drag sequence in a single debugger session.
+ * Press at start, interpolate movement to end, release.
+ */
+async function cmdMouseDragCDP(tabId, startX, startY, endX, endY, steps = 20, duration = 500) {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (startX === undefined || startY === undefined || endX === undefined || endY === undefined) {
+        return { success: false, error: 'startX, startY, endX, endY required' };
+    }
+
+    try {
+        return await withDebugger(tabId, async (target) => {
+            const stepDelay = Math.max(1, Math.floor(duration / steps));
+
+            // Move to start position
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseMoved',
+                x: startX,
+                y: startY,
+            });
+            await new Promise(r => setTimeout(r, 30));
+
+            // Press at start
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed',
+                x: startX,
+                y: startY,
+                button: 'left',
+                buttons: 1,
+                clickCount: 1,
+            });
+            await new Promise(r => setTimeout(r, 30));
+
+            // Interpolated move from start to end
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const cx = i < steps ? jitter(startX + (endX - startX) * t) : endX;
+                const cy = i < steps ? jitter(startY + (endY - startY) * t) : endY;
+
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: Math.round(cx),
+                    y: Math.round(cy),
+                    buttons: 1,
+                });
+
+                await new Promise(r => setTimeout(r, stepDelay));
+            }
+
+            // Release at end
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased',
+                x: endX,
+                y: endY,
+                button: 'left',
+                buttons: 0,
+                clickCount: 1,
+            });
+
+            return {
+                success: true,
+                data: { startX, startY, endX, endY, steps, duration, method: 'cdp' }
+            };
+        });
+    } catch (e) {
+        return { success: false, error: `Mouse drag failed: ${e.message}` };
+    }
+}
+
+/**
+ * CDP mouse wheel: dispatch native scroll wheel event at coordinates.
+ */
+async function cmdMouseWheelCDP(tabId, x, y, deltaX = 0, deltaY = 0) {
+    if (!tabId) return { success: false, error: 'tabId required' };
+    if (x === undefined || y === undefined) return { success: false, error: 'x and y required' };
+
+    try {
+        return await withDebugger(tabId, async (target) => {
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseWheel',
+                x, y,
+                deltaX: deltaX || 0,
+                deltaY: deltaY || 0,
+            });
+
+            return {
+                success: true,
+                data: { x, y, deltaX, deltaY, method: 'cdp' }
+            };
+        });
+    } catch (e) {
+        return { success: false, error: `Mouse wheel failed: ${e.message}` };
     }
 }
 

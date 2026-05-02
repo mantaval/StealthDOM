@@ -17,6 +17,9 @@ StealthDOM/
 │
 ├── bridge_server.py           ← WebSocket relay (port 9877: extension, port 9878: clients)
 ├── stealth_dom_mcp.py         ← MCP server wrapping all commands as AI agent tools
+├── install.bat                ← Backend installer (Python & Auto-start)
+├── uninstall.bat              ← Backend uninstaller
+├── scripts/                   ← Internal scripts (bridge startup, installer logic)
 ├── tests/test_stealth_dom.py  ← Integration test suite
 └── docs/                      ← This documentation
 ```
@@ -159,5 +162,5 @@ Chromium's Manifest V3 service workers can be terminated after ~30 seconds of in
 
 - [Why StealthDOM?](00_why_stealthdom.md) — The case for inside-the-browser automation
 - [Installation Guide](02_installation_guide.md) — Setup, MCP configuration, troubleshooting
-- [API Reference](03_api_reference.md) — Complete reference for all 51 MCP tools and 55+ WebSocket commands
+- [API Reference](03_api_reference.md) — Complete reference for all 57 MCP tools and WebSocket commands
 - [Screenshot Approaches](04_screenshot_approaches.md) — CDP screenshot architecture and detection analysis

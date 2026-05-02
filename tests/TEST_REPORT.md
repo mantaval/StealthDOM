@@ -1,10 +1,11 @@
 # StealthDOM Test Suite Report
 
-**Results:** 89/91 passed, 2 failed
+**Results:** 96/99 passed, 3 failed
 
 ## Failures
 - **Screenshot**: `Command captureScreenshot timed out after 15s | Diagnostics: Tab is AWAKE (Active: True, Visibility: visible). If screenshot timed out, the browser window is likely 100% occluded by an Always-on-Top app (IDE), or it was just created in a minimized window and deferred rendering.`
 - **Screenshot no focus steal**: `Command captureScreenshot timed out after 15s | Diagnostics: Tab is AWAKE (Active: False, Visibility: visible). If screenshot timed out, the browser window is likely 100% occluded by an Always-on-Top app (IDE), or it was just created in a minimized window and deferred rendering.`
+- **Mouse CDP**: `'charmap' codec can't encode character '\u2192' in position 41: character maps to <undefined>`
 
 ## Analysis & Possible Causes
 ### Command captureScreenshot timed out
@@ -30,7 +31,7 @@
 ### listTabs succeeds
 - ✅ All 1 assertions passed.
 
-### Found 12 tabs
+### Found 16 tabs
 - ✅ All 1 assertions passed.
 
 ### Tab has all required fields (id, url, title, active, windowId, incognito)
@@ -51,13 +52,13 @@
 ### listConnections: 1 browser(s) connected, primary='chrome'
 - ✅ All 1 assertions passed.
 
-### Using tab 1653965342: https://mail.google.com/mail/u/0/#inbox/WhctKLcDthqwVxqPgmRB
+### Using tab 1653965342: https://mail.google.com/mail/u/0/#inbox
 - ✅ All 1 assertions passed.
 
-### getTitle with explicit tabId returned: Your Escrow Analysis Statement is now available - 
+### getTitle with explicit tabId returned: Inbox (171) - mantaval@gmail.com - Gmail
 - ✅ All 1 assertions passed.
 
-### getURL with explicit tabId returned: https://mail.google.com/mail/u/0/#inbox/WhctKLcDthqwVxqPgmRB
+### getURL with explicit tabId returned: https://mail.google.com/mail/u/0/#inbox
 - ✅ All 1 assertions passed.
 
 ### navigate correctly rejects missing tabId
@@ -78,7 +79,7 @@
 ### querySelector correctly rejects missing tabId
 - ✅ All 1 assertions passed.
 
-### virtualId routing OK: 'chrome:1653965342' -> title='Your Escrow Analysis Statement is now av'
+### virtualId routing OK: 'chrome:1653965342' -> title='Inbox (171) - mantaval@gmail.com - Gmail'
 - ✅ All 1 assertions passed.
 
 ### All parallel commands returned correct response types (no cross-talk)
@@ -87,7 +88,7 @@
 ### Screenshot
 - ❌ `Screenshot: Command captureScreenshot timed out after 15s | Diagnostics: Tab is AWAKE (Active: True, Visibility: visible). If screenshot timed out, the browser window is likely 100% occluded by an Always-on-Top app (IDE), or it was just created in a minimized window and deferred rendering.`
 
-### Full-page screenshot returned: Command captureFullPageScreenshot timed out after 30s (may be expected)
+### Full-page screenshot captured (314682 chars)
 - ✅ All 1 assertions passed.
 
 ### All 3 parallel screenshots succeeded (mutex serialized them)
@@ -96,16 +97,16 @@
 ### Screenshot no focus steal
 - ❌ `Screenshot no focus steal: Command captureScreenshot timed out after 15s | Diagnostics: Tab is AWAKE (Active: False, Visibility: visible). If screenshot timed out, the browser window is likely 100% occluded by an Always-on-Top app (IDE), or it was just created in a minimized window and deferred rendering.`
 
-### Screenshot captured successfully via CDP (139390 chars)
+### Screenshot captured successfully via CDP (137742 chars)
 - ✅ All 1 assertions passed.
 
-### Full-page captured in single CDP shot: 1323x721px
+### Full-page captured in single CDP shot: 1438x807px
 - ✅ All 1 assertions passed.
 
 ### querySelector body returned correct tagName
 - ✅ All 1 assertions passed.
 
-### querySelectorAll returned 2140 elements (limit=5)
+### querySelectorAll returned 1823 elements (limit=5)
 - ✅ All 1 assertions passed.
 
 ### getInnerText returned dict (frameset â€” accepted)
@@ -117,7 +118,7 @@
 ### getAttribute returned successfully
 - ✅ All 1 assertions passed.
 
-### getBoundingRect body: 1323x721 at (0,0)
+### getBoundingRect body: 1438x807 at (0,0)
 - ✅ All 1 assertions passed.
 
 ### waitForSelector found 'body' immediately
@@ -168,16 +169,40 @@
 ### hover command succeeded
 - ✅ All 1 assertions passed.
 
+### Got target coordinates (719, 39)
+- ✅ All 1 assertions passed.
+
+### mouseMoveCDP succeeded
+- ✅ All 1 assertions passed.
+
+### mouseClickCDP (single left) succeeded
+- ✅ All 1 assertions passed.
+
+### mouseClickCDP (double-click) succeeded
+- ✅ All 1 assertions passed.
+
+### mouseDownCDP succeeded
+- ✅ All 1 assertions passed.
+
+### mouseUpCDP succeeded
+- ✅ All 1 assertions passed.
+
+### mouseDragCDP succeeded (719,39) → (819,89)
+- ✅ All 1 assertions passed.
+
+### Mouse CDP
+- ❌ `Mouse CDP: 'charmap' codec can't encode character '\u2192' in position 41: character maps to <undefined>`
+
 ### evaluate returned: None
 - ✅ All 1 assertions passed.
 
 ### listFrames returned 7 frame(s)
 - ✅ All 1 assertions passed.
 
-### Frame structure OK: url=https://mail.google.com/mail/u/0/#inbox/WhctKLcDth, hasBody=True
+### Frame structure OK: url=https://mail.google.com/mail/u/0/#inbox, hasBody=True
 - ✅ All 1 assertions passed.
 
-### Frame enrichment: elementCount=5881
+### Frame enrichment: elementCount=4763
 - ✅ All 1 assertions passed.
 
 ### Frame enrichment: isFrameset=False
@@ -201,10 +226,10 @@
 ### querySelector in top-level frame (frameId=0) succeeded
 - ✅ All 1 assertions passed.
 
-### querySelector in child frame (frameId=16) succeeded
+### querySelector in child frame (frameId=291) succeeded
 - ✅ All 1 assertions passed.
 
-### getPageText in frame 21: 500 chars
+### getPageText in frame 291: 500 chars
 - ✅ All 1 assertions passed.
 
 ### navigate to httpbin.org/html succeeded
@@ -219,7 +244,7 @@
 ### reloadTab succeeded
 - ✅ All 1 assertions passed.
 
-### newTab created tab 1653965567
+### newTab created tab 1653965634
 - ✅ All 1 assertions passed.
 
 ### New tab found in listTabs
@@ -234,7 +259,7 @@
 ### Closed tab no longer in listTabs
 - ✅ All 1 assertions passed.
 
-### newWindow created window 1653965569
+### newWindow created window 1653965636
 - ✅ All 1 assertions passed.
 
 ### resizeWindow to 800x600 succeeded
@@ -285,7 +310,7 @@
 ### File input has 1 file(s) set
 - ✅ All 1 assertions passed.
 
-### newIncognitoWindow created window 1653965580
+### newIncognitoWindow created window 1653965647
 - ✅ All 1 assertions passed.
 
 ### Incognito window confirmed in listWindows
