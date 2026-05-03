@@ -306,36 +306,6 @@ Remove focus from a DOM element.
 
 ---
 
-### check
-Check a checkbox (no-op if already checked).
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `selector` | string | ✅ | — | CSS selector of the checkbox |
-
-```json
-{ "action": "check", "selector": "#checkbox" }
-```
-**MCP Tool:** `browser_check(tab_id, selector, frame_id=None)`  
-**Handled by:** Content Script
-
----
-
-### uncheck
-Uncheck a checkbox (no-op if already unchecked).
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `selector` | string | ✅ | — | CSS selector of the checkbox |
-
-```json
-{ "action": "uncheck", "selector": "#checkbox" }
-```
-**MCP Tool:** `browser_uncheck(tab_id, selector, frame_id=None)`  
-**Handled by:** Content Script
-
----
-
 ### selectOption
 Select an option in a dropdown/select element.
 
@@ -545,27 +515,7 @@ Dispatch a native scroll wheel event at specific coordinates.
 
 ## Page Info
 
-### getURL
-Get the current page URL.
 
-```json
-{ "action": "getURL" }
-```
-**MCP Tool:** `browser_get_url(tab_id)`  
-**Handled by:** Content Script
-
----
-
-### getTitle
-Get the current page title.
-
-```json
-{ "action": "getTitle" }
-```
-**MCP Tool:** `browser_get_title(tab_id)`  
-**Handled by:** Content Script
-
----
 
 ### getStatus
 Get page status (URL and title).
@@ -606,16 +556,6 @@ Go back in browser history.
 
 ---
 
-### goForward
-Go forward in browser history.
-
-```json
-{ "action": "goForward" }
-```
-**MCP Tool:** `browser_forward(tab_id)`  
-**Handled by:** Background
-
----
 
 ### reloadTab
 Reload a tab.
@@ -724,16 +664,6 @@ Open a new private/incognito browser window (clean session, no cookies).
 
 ---
 
-### listWindows
-List all open browser windows with their IDs, types, sizes, and incognito status.
-
-```json
-{ "action": "listWindows" }
-```
-**MCP Tool:** `browser_list_windows()`  
-**Handled by:** Background
-
----
 
 ### closeWindow
 Close a browser window and all its tabs.
@@ -861,6 +791,7 @@ Execute arbitrary JavaScript code in the current page's MAIN world context. Work
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `code` | string | ✅ | — | JavaScript code to evaluate |
+| `world` | string | — | `MAIN` | `MAIN` or `ISOLATED` |
 
 Supports both expressions and return statements:
 
@@ -869,7 +800,7 @@ Supports both expressions and return statements:
 { "action": "evaluate", "code": "return document.querySelectorAll('a').length" }
 { "action": "evaluate", "code": "return [...document.querySelectorAll('a')].map(a => a.href)" }
 ```
-**MCP Tool:** `browser_evaluate(tab_id, code)`  
+**MCP Tool:** `browser_evaluate(tab_id, code, world='MAIN')`  
 **Handled by:** Background (via `chrome.scripting.executeScript`)
 
 ---
@@ -986,22 +917,6 @@ Useful for revealing dropdown menus, tooltips, and hover-activated UI.
 
 ---
 
-### dragAndDrop
-Drag an element and drop it onto another element using the HTML5 Drag API.
-Works for drag-enabled libraries (Kanban boards, sortable lists, file drop zones).
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `sourceSelector` | string | ✅ | — | CSS selector of the element to drag |
-| `targetSelector` | string | ✅ | — | CSS selector of the drop target |
-
-```json
-{ "action": "dragAndDrop", "sourceSelector": ".card", "targetSelector": ".column-done" }
-```
-**MCP Tool:** `browser_drag_and_drop(tab_id, source_selector, target_selector, frame_id=None)`  
-**Handled by:** Content Script
-
----
 
 ### waitForUrl
 Wait for the tab's URL to match a pattern. Ideal for SPA navigation.
@@ -1020,18 +935,6 @@ Pattern can be a substring (e.g., '/dashboard') or a regex (e.g., '/order/[0-9]+
 
 ---
 
-### listConnections
-List all browser connections currently active on the bridge.
-Useful when multiple browsers (e.g., Brave + Chrome) are connected simultaneously.
-
-```json
-{ "action": "listConnections" }
-→ { "data": { "connections": [...], "count": 2 } }
-```
-**MCP Tool:** `browser_list_connections()`  
-**Handled by:** Bridge Server
-
----
 
 ### listFrames
 List all frames (iframes, framesets) in a tab. Returns URL, title, element count, and body
@@ -1114,7 +1017,7 @@ Every WebSocket command supports these parameters:
 
 > **Important:** `tabId` is **mandatory** for all tab-scoped commands (DOM, navigation, screenshots, evaluate, etc.).
 > There is no "active tab" fallback — commands without `tabId` will return an error.
-> Only `listTabs`, `listWindows`, `newTab`, `newWindow`, and `newIncognitoWindow` do not require `tabId`.
+> Only `listTabs`, `newTab`, `newWindow`, and `newIncognitoWindow` do not require `tabId`.
 
 ```json
 { "action": "click", "selector": "#btn", "_timeout": 10, "tabId": 456 }

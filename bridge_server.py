@@ -248,7 +248,6 @@ class BridgeServer:
         Handles:
         - Multi-browser routing via virtual tab IDs ("label:tabId")
         - Aggregated listTabs across all connected browsers
-        - listConnections utility command
         """
         msg_id = data.pop('_msg_id', None)
         action = data.get('action', '')
@@ -260,12 +259,7 @@ class BridgeServer:
                 result['_msg_id'] = msg_id
             return result
 
-        # ---- Commands that don't need an active connection ----
-        if action == 'listConnections':
-            result = self._cmd_list_connections()
-            if msg_id:
-                result['_msg_id'] = msg_id
-            return result
+
 
         # ---- Check connection availability ----
         if not self.is_connected:
@@ -302,22 +296,7 @@ class BridgeServer:
             result['_msg_id'] = msg_id
         return result
 
-    def _cmd_list_connections(self) -> dict:
-        """Return all currently connected browser labels."""
-        connections = []
-        for label in self._connections:
-            connections.append({
-                'label': label,
-                'isPrimary': label == self._primary_label,
-            })
-        return {
-            'success': True,
-            'data': {
-                'connections': connections,
-                'count': len(connections),
-                'primaryLabel': self._primary_label,
-            }
-        }
+
 
     async def _cmd_list_tabs_all(self, timeout: float = 30) -> dict:
         """Aggregate tabs from ALL connected browsers into one flat list.

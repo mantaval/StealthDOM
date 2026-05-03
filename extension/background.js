@@ -393,8 +393,6 @@ async function handleBackgroundCommand(msg) {
             return await cmdNavigate(msg.url, msg.tabId);
         case 'goBack':
             return await cmdGoBack(msg.tabId);
-        case 'goForward':
-            return await cmdGoForward(msg.tabId);
 
         // === Screenshots ===
         case 'captureScreenshot':
@@ -441,8 +439,6 @@ async function handleBackgroundCommand(msg) {
             return await cmdNewWindow(msg.url);
         case 'newIncognitoWindow':
             return await cmdNewIncognitoWindow(msg.url);
-        case 'listWindows':
-            return await cmdListWindows();
         case 'closeWindow':
             return await cmdCloseWindow(msg.windowId);
         case 'resizeWindow':
@@ -593,12 +589,12 @@ async function bridgeRouteCommand(msg) {
     // These actions are handled directly in the background script
     const bgActions = [
         'listTabs', 'newTab', 'closeTab', 'switchTab', 'reloadTab',
-        'navigate', 'goBack', 'goForward',
+        'navigate', 'goBack',
         'captureScreenshot', 'captureFullPageScreenshot',
         'mouseMoveCDP', 'mouseClickCDP', 'mouseDownCDP', 'mouseUpCDP', 'mouseDragCDP', 'mouseWheelCDP',
         'getCookies', 'setCookie', 'deleteCookie', 'listCookieStores',
         'startNetCapture', 'stopNetCapture', 'getNetCapture', 'clearNetCapture',
-        'newWindow', 'newIncognitoWindow', 'listWindows', 'closeWindow', 'resizeWindow',
+        'newWindow', 'newIncognitoWindow', 'closeWindow', 'resizeWindow',
         'executeScript', 'executeScriptAllFrames', 'listFrames',
         'enableBlock', 'disableBlock',
         'waitForUrl',
@@ -758,11 +754,6 @@ async function cmdGoBack(tabId) {
     return { success: true };
 }
 
-async function cmdGoForward(tabId) {
-    if (!tabId) return { success: false, error: 'tabId required' };
-    await chrome.tabs.goForward(tabId);
-    return { success: true };
-}
 
 // ==========================================
 // Screenshots
@@ -933,6 +924,13 @@ async function cmdCaptureScreenshot(tabId) {
     try {
         if (!tabId) return { success: false, error: 'tabId required' };
 
+        // Auto-restore minimized windows before CDP attempt.
+        // Chromium completely suspends the renderer for minimized windows,
+        // causing CDP screenshots and mouse events to hang indefinitely.
+        // Restore once and leave it — users of this extension expect it.
+        const tab = await chrome.tabs.get(tabId);
+        await ensureWindowNotMinimized(tab.windowId);
+
         // Primary path: CDP via chrome.debugger (no focus-stealing, no quota)
         try {
             return await cmdCaptureScreenshotCDP(tabId);
@@ -948,13 +946,7 @@ async function cmdCaptureScreenshot(tabId) {
             .then(ws => ws.filter(w => w.focused));
         const prevWindowId = prevWindow?.id;
 
-        // Get the target tab so we know which window it's in
-        const tab = await chrome.tabs.get(tabId);
-
-        // Remember this window's state BEFORE we force it to the front
-        const targetWindow = await chrome.windows.get(tab.windowId);
-        const wasMinimized = targetWindow.state === 'minimized';
-
+        // tab and targetWindow already fetched above for auto-restore
         await chrome.tabs.update(tabId, { active: true });
         await chrome.windows.update(tab.windowId, { focused: true, state: 'normal' });
         // Brief delay to let the tab render after activation
@@ -965,10 +957,7 @@ async function cmdCaptureScreenshot(tabId) {
             quality: 90,
         });
 
-        // If the window was minimized before we stole focus, put it back
-        if (wasMinimized) {
-            chrome.windows.update(tab.windowId, { state: 'minimized' }).catch(() => {});
-        }
+        // Window stays restored — user expects it for automation
 
         return {
             success: true,
@@ -1000,6 +989,10 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
     try {
         if (!tabId) return { success: false, error: 'tabId required' };
 
+        // Auto-restore minimized windows (same pattern as cmdCaptureScreenshot)
+        const tab = await chrome.tabs.get(tabId);
+        await ensureWindowNotMinimized(tab.windowId);
+
         // Primary path: CDP full-page capture (no scrolling, no focus)
         try {
             return await cmdCaptureFullPageScreenshotCDP(tabId, maxHeight);
@@ -1014,12 +1007,7 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
             .then(ws => ws.filter(w => w.focused));
         const prevWindowId = prevWindow?.id;
 
-        // Activate tab and focus window (required for captureVisibleTab)
-        const tab = await chrome.tabs.get(tabId);
-        // Remember this window's state BEFORE we force it to the front
-        const targetWindow = await chrome.windows.get(tab.windowId);
-        const wasMinimized = targetWindow.state === 'minimized';
-
+        // tab and targetWindow already fetched above for auto-restore
         await chrome.tabs.update(tabId, { active: true });
         await chrome.windows.update(tab.windowId, { focused: true, state: 'normal' });
         await new Promise(r => setTimeout(r, 200));
@@ -1193,10 +1181,7 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
         const base64 = btoa(binary);
         const resultDataUrl = `data:image/png;base64,${base64}`;
 
-        // If the window was minimized before we stole focus, put it back
-        if (wasMinimized) {
-            chrome.windows.update(tab.windowId, { state: 'minimized' }).catch(() => {});
-        }
+        // Window stays restored — user expects it for automation
 
         return {
             success: true,
@@ -1240,13 +1225,33 @@ async function cmdCaptureFullPageScreenshot(tabId, maxHeight = 20000) {
 // ==========================================
 
 /**
+ * Ensure a window is not minimized. Chromium suspends the renderer for
+ * minimized windows, breaking CDP screenshots, mouse hit-testing, and
+ * Input.dispatchMouseEvent. Restores once and leaves it restored.
+ */
+async function ensureWindowNotMinimized(windowId) {
+    const win = await chrome.windows.get(windowId);
+    if (win.state === 'minimized') {
+        await chrome.windows.update(windowId, { state: 'normal' });
+        // Wait for compositor to wake up and produce at least one frame
+        await new Promise(r => setTimeout(r, 300));
+        console.log('[StealthDOM] Auto-restored minimized window', windowId);
+    }
+}
+
+/**
  * Shared helper: attach chrome.debugger, run an async function, detach.
- * Reuses the same lifecycle pattern as CDP screenshots.
+ * Auto-restores minimized windows before attaching — Chromium's renderer
+ * must be active for CDP Input.dispatch* and Page.capture* to work.
  * @param {number} tabId
  * @param {function(target): Promise<any>} fn - receives {tabId} target
  * @returns {Promise<any>}
  */
 async function withDebugger(tabId, fn) {
+    // Ensure renderer is alive (minimized windows suspend it)
+    const tab = await chrome.tabs.get(tabId);
+    await ensureWindowNotMinimized(tab.windowId);
+
     const target = { tabId };
     try {
         await chrome.debugger.attach(target, '1.3');
@@ -1959,28 +1964,6 @@ async function cmdNewIncognitoWindow(url) {
     }
 }
 
-async function cmdListWindows() {
-    try {
-        const windows = await chrome.windows.getAll({ populate: true });
-        return {
-            success: true,
-            data: windows.map(w => ({
-                id: w.id,
-                type: w.type,
-                state: w.state,
-                incognito: w.incognito,
-                focused: w.focused,
-                width: w.width,
-                height: w.height,
-                left: w.left,
-                top: w.top,
-                tabCount: w.tabs ? w.tabs.length : 0,
-            })),
-        };
-    } catch (e) {
-        return { success: false, error: `listWindows failed: ${e.message}` };
-    }
-}
 
 async function cmdCloseWindow(windowId) {
     try {

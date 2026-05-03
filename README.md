@@ -8,7 +8,7 @@ StealthDOM replaces Playwright/Puppeteer by controlling the browser **from insid
 
 StealthDOM can be used in two ways:
 
-**AI Agents** connect via the MCP protocol — 57 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
+**AI Agents** connect via the MCP protocol — 49 commands exposed as tools with descriptions, so the agent knows what's available and how to use it. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
 
 **Scripts & applications** connect directly via WebSocket on port 9878, sending JSON commands and receiving JSON responses. (see **[03_api_reference.md](docs/03_api_reference.md)** for complete API reference)
 
@@ -62,7 +62,7 @@ StealthDOM has been tested against major bot detection suites:
 
 ## Features
 
-- **57 MCP tools**: DOM queries, clicks, typing, scrolling, keyboard, hover, drag-and-drop, native CDP mouse (move, click, drag, wheel), navigation, cookies, screenshots, JS execution, network capture, proxy fetch, tab/window management
+- **49 MCP tools**: DOM queries, clicks, typing, scrolling, keyboard, hover, native CDP mouse (move, click, drag, wheel), navigation, cookies, screenshots, JS execution, network capture, proxy fetch, tab/window management
 - **Multi-browser support**: Connect Chrome, Brave, and Edge simultaneously — tabs from all browsers shown in one unified list
 - **Virtual tab IDs**: Namespaced as `"label:tabId"` (e.g., `"brave:12345"`) for transparent multi-browser routing
 - **Window management**: Open regular or incognito windows, resize, close
@@ -72,7 +72,7 @@ StealthDOM has been tested against major bot detection suites:
 - **JavaScript execution**: Arbitrary JS in page context — works on ALL sites including YouTube/Gmail (CSP headers auto-stripped)
 - **Network capture**: Circular buffer (5,000 entries) with overflow detection
 - **Proxy Fetch**: Route HTTP requests through the browser's real TLS fingerprint and cookies
-- **MCP integration**: Full MCP server with 57 tools, instructions, and capabilities resource
+- **MCP integration**: Full MCP server with 49 tools, instructions, and capabilities resource
 - **Cross-frame DOM access**: Target elements inside iframes and framesets via `frame_id` — works on Gmail, OAuth dialogs, payment widgets
 - **Explicit targeting**: All commands target tabs by ID — safe for multi-window, multi-agent use
 - **On-demand injection**: Content script only loads in tabs you actually use — zero overhead on untouched tabs
@@ -133,9 +133,9 @@ Double-click **`install.bat`** — it handles everything: Python, dependencies, 
        tab_id = tab.get("virtualId") or tab["id"]
        print(f"Using tab {tab_id}: {tab['title']}")
 
-       # Get the page title
+       # Get the page text
        msg_id = str(uuid.uuid4())[:8]
-       await ws.send(json.dumps({"action": "getTitle", "tabId": tab_id, "_msg_id": msg_id, "_timeout": 5}))
+       await ws.send(json.dumps({"action": "getPageText", "tabId": tab_id, "maxLength": 100, "_msg_id": msg_id, "_timeout": 5}))
        print(json.loads(await ws.recv()))
 
        await ws.close()

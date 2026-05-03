@@ -288,33 +288,6 @@ async def test_list_tabs(results: TestResults):
         await ws.close()
 
 
-async def test_list_windows(results: TestResults):
-    """Test listing windows returns proper structure."""
-    print("\n[Test: List Windows]")
-    ws = await websockets.connect(BRIDGE_URL)
-    try:
-        r = await bridge_send(ws, "listWindows")
-        assert r.get("success"), f"listWindows failed: {r.get('error')}"
-        results.ok("listWindows succeeds")
-        
-        windows = r["data"]
-        assert isinstance(windows, list), "data should be a list"
-        assert len(windows) > 0, "Should have at least one window"
-        
-        win = windows[0]
-        required_fields = ["id", "type", "incognito", "focused"]
-        for field in required_fields:
-            assert field in win, f"Missing field: {field}"
-        results.ok("Window has all required fields (id, type, incognito, focused)")
-        
-    except AssertionError as e:  # noqa
-        results.fail("listWindows structure", str(e))
-    except Exception as e:
-        results.fail("listWindows", str(e))
-    finally:
-        await ws.close()
-
-
 async def test_explicit_tab_targeting(results: TestResults):
     """Test that DOM commands work with explicit tab_id."""
     print("\n[Test: Explicit Tab Targeting]")
@@ -429,7 +402,6 @@ async def test_parallel_commands(results: TestResults):
             run_command("getTitle"),
             run_command("getURL"),
             run_command("listTabs"),
-            run_command("listWindows"),
         ]
         
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
@@ -454,8 +426,6 @@ async def test_parallel_commands(results: TestResults):
                     assert isinstance(resp["data"], str), "getURL should return string"
                 elif action == "listTabs":
                     assert isinstance(resp["data"], list), "listTabs should return list"
-                elif action == "listWindows":
-                    assert isinstance(resp["data"], list), "listWindows should return list"
             results.ok("All parallel commands returned correct response types (no cross-talk)")
         
     except Exception as e:
@@ -480,25 +450,6 @@ async def test_msg_id_echo(results: TestResults):
         results.fail("_msg_id echo", str(e))
     except Exception as e:
         results.fail("_msg_id echo", str(e))
-    finally:
-        await ws.close()
-
-
-async def test_list_connections(results: TestResults):
-    """Test listConnections returns bridge connection info."""
-    print("\n[Test: List Connections]")
-    ws = await websockets.connect(BRIDGE_URL)
-    try:
-        r = await bridge_send(ws, "listConnections")
-        assert r.get("success"), f"listConnections failed: {r.get('error')}"
-        data = r["data"]
-        assert "connections" in data, "Missing connections field"
-        assert "primaryLabel" in data, "Missing primaryLabel field"
-        results.ok(f"listConnections: {data['count']} browser(s) connected, primary='{data['primaryLabel']}'")
-    except AssertionError as e:
-        results.fail("listConnections", str(e))
-    except Exception as e:
-        results.fail("listConnections", str(e))
     finally:
         await ws.close()
 
@@ -1088,7 +1039,6 @@ async def test_dom_interaction(results: TestResults):
             '<input id="test-input" type="text" value="" />' +
             '<button id="test-btn">Click Me</button>' +
             '<select id="test-select"><option value="a">A</option><option value="b">B</option></select>' +
-            '<input id="test-check" type="checkbox" />' +
             '</div>'; 'injected';"""
         r = await bridge_send(ws, "evaluate", tabId=created_tab_id, code=test_html)
         assert r.get("success"), f"Inject HTML failed: {r.get('error')}"
@@ -1114,16 +1064,6 @@ async def test_dom_interaction(results: TestResults):
         r = await bridge_send(ws, "selectOption", tabId=created_tab_id, selector="#test-select", value="b")
         assert r.get("success"), f"selectOption failed: {r.get('error')}"
         results.ok("selectOption succeeded")
-
-        # check â€” check the checkbox
-        r = await bridge_send(ws, "check", tabId=created_tab_id, selector="#test-check")
-        assert r.get("success"), f"check failed: {r.get('error')}"
-        results.ok("check succeeded")
-
-        # uncheck â€” uncheck the checkbox
-        r = await bridge_send(ws, "uncheck", tabId=created_tab_id, selector="#test-check")
-        assert r.get("success"), f"uncheck failed: {r.get('error')}"
-        results.ok("uncheck succeeded")
 
     except AssertionError as e:
         results.fail("DOM Interaction", str(e))
@@ -1270,12 +1210,6 @@ async def test_window_lifecycle(results: TestResults):
         r = await bridge_send(ws, "resizeWindow", windowId=created_window_id, width=800, height=600)
         assert r.get("success"), f"resizeWindow failed: {r.get('error')}"
         results.ok("resizeWindow to 800x600 succeeded")
-
-        # Verify in listWindows
-        r = await bridge_send(ws, "listWindows")
-        win_ids = [w["id"] for w in r["data"]]
-        assert created_window_id in win_ids, "New window not in listWindows"
-        results.ok("New window found in listWindows")
 
         # closeWindow
         r = await bridge_send(ws, "closeWindow", windowId=created_window_id)
@@ -1538,34 +1472,6 @@ async def test_type_direct(results: TestResults):
         await ws.close()
 
 
-async def test_drag_and_drop(results: TestResults):
-    """Test dragAndDrop command structure (verifies command is accepted)."""
-    print("\n[Test: Drag and Drop (v3.1.0 audit)]")
-    ws = await websockets.connect(BRIDGE_URL)
-    created_tab_id = None
-    try:
-        created_tab_id = await ensure_test_tab(ws, "https://example.com")
-        assert created_tab_id is not None, "Failed to ensure test tab"
-
-        # Inject two elements to drag between
-        r = await bridge_send(ws, "evaluate", tabId=created_tab_id,
-                              code="document.body.innerHTML = '<div id=\"src\" draggable=\"true\">Drag</div><div id=\"tgt\">Drop Here</div>'; 'ok'")
-        assert r.get("success")
-
-        # Try drag and drop
-        r = await bridge_send(ws, "dragAndDrop", tabId=created_tab_id,
-                              sourceSelector="#src", targetSelector="#tgt")
-        assert r.get("success"), f"dragAndDrop failed: {r.get('error')}"
-        results.ok("dragAndDrop command accepted")
-
-    except AssertionError as e:
-        results.fail("Drag and Drop", str(e))
-    except Exception as e:
-        results.fail("Drag and Drop", str(e))
-    finally:
-        await ws.close()
-
-
 async def test_wait_for_url(results: TestResults):
     """Test waitForUrl command â€” match current URL pattern."""
     print("\n[Test: Wait For URL (v3.1.0 audit)]")
@@ -1647,14 +1553,6 @@ async def test_incognito_window(results: TestResults):
             return
         created_window_id = r["data"]["windowId"]
         results.ok(f"newIncognitoWindow created window {created_window_id}")
-
-        # Verify it exists and is incognito
-        r = await bridge_send(ws, "listWindows")
-        assert r.get("success")
-        incognito_wins = [w for w in r["data"] if w["id"] == created_window_id]
-        if incognito_wins:
-            assert incognito_wins[0].get("incognito"), "Window should be incognito"
-            results.ok("Incognito window confirmed in listWindows")
 
         # Close
         r = await bridge_send(ws, "closeWindow", windowId=created_window_id)
@@ -1806,8 +1704,6 @@ async def run_all_tests():
     await test_bridge_connection(results)
     await test_msg_id_echo(results)
     await test_list_tabs(results)
-    await test_list_windows(results)
-    await test_list_connections(results)
     await test_explicit_tab_targeting(results)
     await test_missing_tab_id_rejected(results)
     await test_virtual_tab_routing(results)
@@ -1859,7 +1755,6 @@ async def run_all_tests():
 
     # Audit gap coverage (v3.1.0)
     await test_type_direct(results)
-    await test_drag_and_drop(results)
     await test_wait_for_url(results)
     await test_upload_file(results)
     await test_incognito_window(results)

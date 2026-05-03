@@ -79,8 +79,7 @@
                 return cmdDblClick(msg.selector);
             case 'hover':
                 return cmdHover(msg.selector);
-            case 'dragAndDrop':
-                return await cmdDragAndDrop(msg.sourceSelector, msg.targetSelector);
+
             case 'type':
                 return cmdType(msg.selector, msg.text);
             case 'fill':
@@ -89,10 +88,7 @@
                 return cmdFocus(msg.selector);
             case 'blur':
                 return cmdBlur(msg.selector);
-            case 'check':
-                return cmdCheck(msg.selector);
-            case 'uncheck':
-                return cmdUncheck(msg.selector);
+
             case 'selectOption':
                 return cmdSelectOption(msg.selector, msg.value);
             case 'scrollIntoView':
@@ -108,10 +104,7 @@
 
 
             // === Page Info ===
-            case 'getURL':
-                return { success: true, data: window.location.href };
-            case 'getTitle':
-                return { success: true, data: document.title };
+
             case 'getPageText':
                 return { success: true, data: (document.body.innerText || '').substring(0, msg.maxLength || Infinity) };
             case 'getPageHTML':
@@ -123,7 +116,7 @@
                 // Works on ALL sites — CSP headers are stripped by declarativeNetRequest.
                 // Supports expressions ('document.title') and return statements
                 // ('return document.querySelectorAll("a").length').
-                return await forwardToBackground({ action: 'executeScript', code: msg.code });
+                return await forwardToBackground({ action: 'executeScript', code: msg.code, world: msg.world });
             case 'setInputFiles':
                 return await cmdSetInputFiles(msg.selector, msg.dataUrl);
             case 'proxyFetch':
@@ -334,31 +327,6 @@
         return { success: true };
     }
 
-    /**
-     * Drag-and-drop from source element to target element.
-     * Uses the HTML5 DragEvent API. Works for elements with draggable=true
-     * and libraries that listen for drag events (Kanban boards, sortable lists).
-     */
-    async function cmdDragAndDrop(sourceSelector, targetSelector) {
-        const source = document.querySelector(sourceSelector);
-        if (!source) return { success: false, error: `Source not found: ${sourceSelector}` };
-        const target = document.querySelector(targetSelector);
-        if (!target) return { success: false, error: `Target not found: ${targetSelector}` };
-
-        source.scrollIntoView({ block: 'center' });
-        const dt = new DataTransfer();
-
-        source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
-        await sleep(50);
-        target.scrollIntoView({ block: 'center' });
-        target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
-        target.dispatchEvent(new DragEvent('dragover',  { bubbles: true, cancelable: true, dataTransfer: dt }));
-        await sleep(50);
-        target.dispatchEvent(new DragEvent('drop',    { bubbles: true, cancelable: true, dataTransfer: dt }));
-        source.dispatchEvent(new DragEvent('dragend',  { bubbles: true, cancelable: true, dataTransfer: dt }));
-
-        return { success: true };
-    }
 
     function cmdType(selector, text) {
         const el = document.querySelector(selector);
@@ -422,19 +390,6 @@
         return { success: true };
     }
 
-    function cmdCheck(selector) {
-        const el = document.querySelector(selector);
-        if (!el) return elementNotFoundError(selector);
-        if (!el.checked) el.click();
-        return { success: true };
-    }
-
-    function cmdUncheck(selector) {
-        const el = document.querySelector(selector);
-        if (!el) return elementNotFoundError(selector);
-        if (el.checked) el.click();
-        return { success: true };
-    }
 
     function cmdSelectOption(selector, value) {
         const el = document.querySelector(selector);

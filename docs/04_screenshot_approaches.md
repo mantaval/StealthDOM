@@ -32,7 +32,7 @@ The old `captureVisibleTab` path is retained as an automatic, transparent fallba
 | ~2 captures/sec rate limit | No rate limit |
 | Full-page requires scroll-stitch (8+ frames) | Full-page renders in a single shot |
 | 150ms visible window flash | Zero visual disruption |
-| Minimized windows pop to front | Minimized windows stay minimized |
+| Minimized windows pop to front | Minimized windows are auto-restored (to ensure compositor activity) |
 | Mutex + retry logic needed | No serialization needed |
 
 ### How it works
@@ -59,7 +59,7 @@ To prevent the agent from going blind during human inspection, we fallback to `c
 
 **Summary:** The CDP path guarantees that 99% of the time, the agent is fast and invisible. The `captureVisibleTab` fallback guarantees that the remaining 1% of the time, the agent never loses its vision.
 
-*(Note: We are also exploring a potential **Tier 3 Fallback** utilizing `html2canvas`—a JavaScript rendering composition injected into the page. If both CDP and the visible tab fallback fail (e.g., if the browser is minimized or 100% occluded by an Always-on-Top application), this third path could manually read the DOM tree and paint it onto an HTML5 canvas, completely bypassing Chromium's suspended graphics engine!)*
+*(Note: We are also exploring a potential **Tier 3 Fallback** utilizing `html2canvas`—a JavaScript rendering composition injected into the page. If both CDP and the visible tab fallback fail (e.g., if the browser is 100% occluded by an Always-on-Top application), this third path could manually read the DOM tree and paint it onto an HTML5 canvas, completely bypassing Chromium's suspended graphics engine!)*
 
 ---
 

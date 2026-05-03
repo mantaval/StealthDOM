@@ -157,29 +157,26 @@ RULES:
 - Use virtualId (e.g. 'brave:12345') for tab_id in all tab-scoped tools.
 - For iframes: browser_list_frames(tab_id) → pass frame_id to DOM tools.
 
-TOOLS (57):
+TOOLS (49):
 
 DOM Reading (9): browser_query, browser_query_all, browser_get_text,
   browser_get_html, browser_get_attribute, browser_get_bounding_rect,
   browser_wait_for, browser_get_page_text, browser_get_page_html
 
-DOM Interaction (11): browser_click, browser_type, browser_fill, browser_press,
-  browser_key_combo, browser_check, browser_uncheck, browser_select,
-  browser_scroll_into_view, browser_hover, browser_drag_and_drop
+DOM Interaction (8): browser_click, browser_type, browser_fill, browser_press,
+  browser_key_combo, browser_select, browser_scroll_into_view, browser_hover
 
 Mouse via CDP (6) — coordinate-based, isTrusted:true, uses chrome.debugger:
   browser_mouse_move, browser_mouse_click, browser_mouse_down, browser_mouse_up,
   browser_mouse_drag, browser_mouse_wheel
   Use browser_get_bounding_rect to get coordinates first.
 
-Navigation (6): browser_navigate, browser_back, browser_forward, browser_reload,
+Navigation (5): browser_navigate, browser_back, browser_reload,
   browser_scroll_to, browser_wait_for_url
 
-Page Info (2): browser_get_url, browser_get_title
-
-Tab/Window (9): browser_list_tabs, browser_new_tab, browser_close_tab,
-  browser_switch_tab, browser_list_windows, browser_new_window,
-  browser_new_incognito_window, browser_close_window, browser_resize_window
+Tab/Window (8): browser_list_tabs, browser_new_tab, browser_close_tab,
+  browser_switch_tab, browser_new_window, browser_new_incognito_window,
+  browser_close_window, browser_resize_window
 
 Screenshots (2): browser_screenshot, browser_screenshot_full_page
 
@@ -191,7 +188,6 @@ Network (3): browser_start_net_capture, browser_stop_net_capture,
 JavaScript (1): browser_evaluate (MAIN or ISOLATED world)
 Frames (2): browser_list_frames, browser_evaluate_all_frames
 File/Fetch (2): browser_upload_file, browser_proxy_fetch
-Connections (1): browser_list_connections
 """)
 
 
@@ -223,7 +219,7 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 | User sessions | Must re-authenticate | Uses existing sessions |
 | TLS fingerprint | Synthetic (detectable) | Real (identical to human) |
 
-## Tool Reference (57 total)
+## Tool Reference (49 total)
 
 ### DOM Reading (9) — accept optional frame_id
 - browser_query — single element by CSS selector
@@ -236,17 +232,15 @@ MCP tools → Bridge (ws://127.0.0.1:9878) → Extension Background → Content 
 - browser_get_page_text — full page visible text
 - browser_get_page_html — full page HTML source
 
-### DOM Interaction (11) — accept optional frame_id
+### DOM Interaction (8) — accept optional frame_id
 - browser_click — click element (auto-scrolls into view)
 - browser_type — append text to input/contenteditable
 - browser_fill — clear and set value (triggers React onChange)
 - browser_press — single key press (Enter, Tab, Escape, etc.)
 - browser_key_combo — key combination (comma-separated: 'Control,Shift,d')
-- browser_check / browser_uncheck — checkbox toggle
 - browser_select — dropdown option by value
 - browser_scroll_into_view — scroll element to center of viewport
 - browser_hover — triggers mouseenter, mouseover, mousemove
-- browser_drag_and_drop — HTML5 Drag API (selector-based)
 
 ### Mouse via CDP (6) — coordinate-based, isTrusted:true
 Uses chrome.debugger + Input.dispatchMouseEvent for native system-level events.
@@ -258,29 +252,24 @@ Use browser_get_bounding_rect to get target coordinates.
 - browser_mouse_drag — full drag: down → move × N → up (single debugger session)
 - browser_mouse_wheel — native scroll at coordinates (delta_x, delta_y)
 
-### Navigation (6)
+### Navigation (5)
 - browser_navigate — go to URL
-- browser_back / browser_forward — history navigation
+- browser_back — history back
 - browser_reload — reload page
 - browser_scroll_to — scroll to pixel coordinates (x, y)
 - browser_wait_for_url — wait for URL to match pattern (substring or regex)
 
-### Page Info (2)
-- browser_get_url — current URL
-- browser_get_title — page title
-
 ### Tab Management (4)
-- browser_list_tabs — all tabs from all connected browsers
+- browser_list_tabs — all tabs from all connected browsers (includes URL, title, windowId)
 - browser_new_tab — open new tab
 - browser_close_tab — close tab
 - browser_switch_tab — activate tab and focus window
 
-### Window Management (5)
+### Window Management (4)
 - browser_new_window — new window with user session
 - browser_new_incognito_window — new private window (clean session)
-- browser_list_windows — all windows with sizes
 - browser_close_window — close window and all its tabs
-- browser_resize_window — resize window
+- browser_resize_window — resize window (get windowId from browser_list_tabs)
 
 ### Screenshots (2)
 - browser_screenshot — visible viewport PNG (CDP capture, no focus stealing)
@@ -307,14 +296,14 @@ Use browser_get_bounding_rect to get target coordinates.
 - browser_upload_file — set file on input[type=file] via data URL
 - browser_proxy_fetch — HTTP request through browser's real TLS fingerprint + cookies
 
-### Connections (1)
-- browser_list_connections — list connected browsers
-
 ## Tips
 - For iframes: browser_list_frames → get frameId → pass frame_id to any DOM tool
 - For React/Vue: browser_fill uses native value setter to trigger onChange
 - For native mouse: browser_get_bounding_rect → browser_mouse_* tools
 - For focus/blur: browser_evaluate('document.querySelector("#id").focus()')
+- For page URL/title: browser_list_tabs() returns URL and title for every tab
+- For checkboxes: browser_click on the checkbox, or browser_evaluate to set .checked
+- For history forward: browser_evaluate(tab, 'history.forward()')
 """
 
 
@@ -584,40 +573,6 @@ async def browser_select(tab_id: int | str, selector: str, value: str, frame_id:
 
 
 @mcp.tool()
-async def browser_check(tab_id: int | str, selector: str, frame_id: int | None = None) -> str:
-    """Check a checkbox (no-op if already checked).
-    
-    Args:
-        tab_id: ID of the tab containing the element (get from browser_list_tabs)
-        selector: CSS selector of the checkbox
-        frame_id: Optional frame ID to target (get from browser_list_frames)
-    """
-    kwargs = dict(tabId=tab_id, selector=selector)
-    if frame_id is not None: kwargs['frameId'] = frame_id
-    result = await send_command("check", **kwargs)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return "Checked"
-
-
-@mcp.tool()
-async def browser_uncheck(tab_id: int | str, selector: str, frame_id: int | None = None) -> str:
-    """Uncheck a checkbox (no-op if already unchecked).
-    
-    Args:
-        tab_id: ID of the tab containing the element (get from browser_list_tabs)
-        selector: CSS selector of the checkbox
-        frame_id: Optional frame ID to target (get from browser_list_frames)
-    """
-    kwargs = dict(tabId=tab_id, selector=selector)
-    if frame_id is not None: kwargs['frameId'] = frame_id
-    result = await send_command("uncheck", **kwargs)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return "Unchecked"
-
-
-@mcp.tool()
 async def browser_hover(tab_id: int | str, selector: str, frame_id: int | None = None) -> str:
     """Hover over a DOM element (triggers mouseenter, mouseover, mousemove).
     Useful for revealing dropdown menus, tooltips, and hover-activated UI.
@@ -633,25 +588,6 @@ async def browser_hover(tab_id: int | str, selector: str, frame_id: int | None =
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Hovered"
-
-
-@mcp.tool()
-async def browser_drag_and_drop(tab_id: int | str, source_selector: str, target_selector: str, frame_id: int | None = None) -> str:
-    """Drag an element and drop it onto another element using the HTML5 Drag API.
-    Works for drag-enabled libraries (Kanban boards, sortable lists, file drop zones).
-
-    Args:
-        tab_id: ID of the tab (get from browser_list_tabs)
-        source_selector: CSS selector of the element to drag
-        target_selector: CSS selector of the drop target
-        frame_id: Optional frame ID to target (get from browser_list_frames)
-    """
-    kwargs = dict(tabId=tab_id, sourceSelector=source_selector, targetSelector=target_selector)
-    if frame_id is not None: kwargs['frameId'] = frame_id
-    result = await send_command("dragAndDrop", **kwargs)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return "Drag and drop completed"
 
 
 # ==========================================
@@ -812,19 +748,6 @@ async def browser_reload(tab_id: int | str) -> str:
 
 
 @mcp.tool()
-async def browser_forward(tab_id: int | str) -> str:
-    """Go forward in browser history.
-
-    Args:
-        tab_id: ID of the tab to go forward in (get from browser_list_tabs)
-    """
-    result = await send_command("goForward", tabId=tab_id)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return "Navigated forward"
-
-
-@mcp.tool()
 async def browser_wait_for_url(tab_id: int | str, pattern: str, timeout: int = 10000) -> str:
     """Wait for the tab's URL to match a pattern. Ideal for SPA navigation.
     Pattern can be a substring (e.g., '/dashboard') or a regex (e.g., '/order/[0-9]+/').
@@ -870,32 +793,6 @@ async def browser_back(tab_id: int | str) -> str:
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return "Navigated back"
-
-
-@mcp.tool()
-async def browser_get_url(tab_id: int | str) -> str:
-    """Get the current page URL.
-    
-    Args:
-        tab_id: ID of the tab to get URL from (get from browser_list_tabs)
-    """
-    result = await send_command("getURL", tabId=tab_id)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return result.get("data", "")
-
-
-@mcp.tool()
-async def browser_get_title(tab_id: int | str) -> str:
-    """Get the current page title.
-    
-    Args:
-        tab_id: ID of the tab to get title from (get from browser_list_tabs)
-    """
-    result = await send_command("getTitle", tabId=tab_id)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return result.get("data", "")
 
 
 @mcp.tool()
@@ -1009,7 +906,7 @@ async def browser_evaluate(tab_id: int | str, code: str, world: str = "MAIN") ->
         code: JavaScript code to evaluate
         world: "MAIN" or "ISOLATED"
     """
-    result = await send_command("evaluate", tabId=tab_id, code=code, world=world)
+    result = await send_command("executeScript", tabId=tab_id, code=code, world=world)
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     data = result.get("data")
@@ -1134,20 +1031,11 @@ async def browser_new_incognito_window(url: str = "about:blank") -> str:
 
 
 @mcp.tool()
-async def browser_list_windows() -> str:
-    """List all open browser windows with their IDs, types, sizes, and incognito status."""
-    result = await send_command("listWindows")
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return json.dumps(result.get("data"), indent=2)
-
-
-@mcp.tool()
 async def browser_close_window(window_id: int) -> str:
     """Close a browser window and all its tabs.
     
     Args:
-        window_id: ID of the window to close (get from browser_list_windows)
+        window_id: ID of the window to close (get windowId from browser_list_tabs)
     """
     result = await send_command("closeWindow", windowId=window_id)
     if not result.get("success"):
@@ -1160,7 +1048,7 @@ async def browser_resize_window(window_id: int, width: int | None = None, height
     """Resize a browser window.
     
     Args:
-        window_id: ID of the window to resize (get from browser_list_windows)
+        window_id: ID of the window to resize (get windowId from browser_list_tabs)
         width: New width in pixels
         height: New height in pixels
     """
@@ -1322,19 +1210,6 @@ async def browser_proxy_fetch(
         kwargs["body"] = body
     kwargs["bodyType"] = body_type
     result = await send_command("proxyFetch", tabId=tab_id, **kwargs)
-    if not result.get("success"):
-        return f"Error: {result.get('error')}"
-    return json.dumps(result.get("data"), indent=2)
-
-
-@mcp.tool()
-async def browser_list_connections() -> str:
-    """List all browser connections currently active on the bridge.
-    Useful when multiple browsers (e.g., Brave + Chrome) are connected simultaneously.
-    Each tab's 'virtualId' encodes its browser label (e.g., 'brave:12345').
-    browser_list_tabs() already aggregates all browsers, so this is only needed for diagnostics.
-    """
-    result = await send_command("listConnections")
     if not result.get("success"):
         return f"Error: {result.get('error')}"
     return json.dumps(result.get("data"), indent=2)
